@@ -234,11 +234,13 @@ export default function InventoryView({ branchId }: Props) {
 
                   {/* Estado Condicional */}
                   <td className="px-4 py-3 text-center">
-                    <span className={`inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-semibold ${item.cantidad <= item.minimo_alerta
-                        ? 'bg-red-50 text-red-700 border border-red-200'
-                        : 'bg-green-50 text-green-700 border border-green-200'
+                    <span className={`inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-semibold ${item.cantidad === 0
+                        ? 'bg-red-200 text-red-900 border border-red-400 font-bold'
+                        : item.cantidad <= item.minimo_alerta
+                          ? 'bg-red-50 text-red-700 border border-red-200'
+                          : 'bg-green-50 text-green-700 border border-green-200'
                       }`}>
-                      {item.cantidad <= item.minimo_alerta ? 'Agotándose' : 'Normal'}
+                      {item.cantidad === 0 ? 'Agotado' : item.cantidad <= item.minimo_alerta ? 'Agotándose' : 'Normal'}
                     </span>
                   </td>
 
