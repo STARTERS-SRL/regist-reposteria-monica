@@ -1,3 +1,4 @@
+// lib/supabase-client.ts
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
@@ -6,7 +7,7 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ''
 const isConfigured = !!(supabaseUrl && supabaseKey)
 
 if (!isConfigured) {
-  console.warn('Supabase configuration incomplete. Using fallback data.')
+  console.warn('Supabase configuration incomplete. Using fallback data stub.')
 }
 
 const createStub = () => {
@@ -14,108 +15,23 @@ const createStub = () => {
     get() {
       return () => ({
         data: null,
-        error: new Error('Supabase no configurado. Define NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.'),
+        error: new Error('Supabase no configurado. Define las variables en .env.local.'),
       })
     },
   }
   return new Proxy({}, handler)
 }
 
-export const supabase = isConfigured ? createClient(supabaseUrl, supabaseKey) : createStub()
+export const supabase = isConfigured ? createClient(supabaseUrl, supabaseKey) : (createStub() as any)
 
-// Mock data para desarrollo y fallback
-export const mockSalesData = [
-  {
-    id: 1,
-    date: '2024-01-15',
-    branch: 'Sucursal Centro',
-    product: 'Torta Chocolate',
-    quantity: 3,
-    amount: 450,
-    paymentMethod: 'Efectivo'
-  },
-  {
-    id: 2,
-    date: '2024-01-15',
-    branch: 'Sucursal Centro',
-    product: 'Pan de Yuca',
-    quantity: 12,
-    amount: 240,
-    paymentMethod: 'QR'
-  },
-  {
-    id: 3,
-    date: '2024-01-15',
-    branch: 'Sucursal Norte',
-    product: 'Donas Azucaradas',
-    quantity: 24,
-    amount: 360,
-    paymentMethod: 'Efectivo'
-  },
-  {
-    id: 4,
-    date: '2024-01-15',
-    branch: 'Sucursal Sur',
-    product: 'Croissants',
-    quantity: 8,
-    amount: 320,
-    paymentMethod: 'QR'
-  },
-  {
-    id: 5,
-    date: '2024-01-15',
-    branch: 'Sucursal Centro',
-    product: 'Pie de Queso',
-    quantity: 5,
-    amount: 250,
-    paymentMethod: 'Efectivo'
-  }
-]
-
-export const mockInventoryData = [
-  {
-    id: 1,
-    product: 'Harina Integral',
-    stock: 45,
-    minStock: 50,
-    status: 'Bajo'
-  },
-  {
-    id: 2,
-    product: 'Azúcar Blanca',
-    stock: 120,
-    minStock: 100,
-    status: 'Normal'
-  },
-  {
-    id: 3,
-    product: 'Levadura',
-    stock: 8,
-    minStock: 10,
-    status: 'Bajo'
-  },
-  {
-    id: 4,
-    product: 'Mantequilla',
-    stock: 35,
-    minStock: 40,
-    status: 'Bajo'
-  },
-  {
-    id: 5,
-    product: 'Chocolate',
-    stock: 25,
-    minStock: 20,
-    status: 'Normal'
-  }
-]
-
+// --- Interfaces Tipadas del Sistema de Repostería ---
 export interface Sale {
   id: string
   branch: string
   total: string
   method: string
   date: string
+  estado: 'activa' | 'anulada'
 }
 
 export interface Branch {
@@ -129,54 +45,148 @@ export interface InventoryAlert {
   productName: string
   currentStock: number
   minimumStock: number
+  daysInStock: number
 }
 
-// Funciones placeholder para futuras llamadas a API/Supabase
+// --- Funciones del Core Conectadas a tu BD Real ---
+
 export async function fetchTodaySales(branchId?: string): Promise<number> {
-  // TODO: Implementar llamada a Supabase
-  // const { data } = await supabase
-  //   .from('sales')
-  //   .select('total')
-  //   .eq('date', today)
-  //   .maybe_eq('branch_id', branchId)
-  // return data?.reduce((sum, sale) => sum + sale.total, 0) || 0
-  return 0
+  if (!isConfigured) return 0
+  const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
+
+  let query = supabase
+    .from('ventas')
+    .select('total')
+    .eq('estado', 'activa')
+    .gte('fecha', hoy.toISOString())
+
+  if (branchId && branchId !== 'all') {
+    query = query.eq('sucursal_id', parseInt(branchId))
+  }
+
+  const { data, error } = await query
+  if (error) return 0
+  return data?.reduce((sum, s) => sum + Number(s.total), 0) || 0
 }
 
 export async function fetchCashIncome(branchId?: string): Promise<number> {
-  // TODO: Implementar llamada a Supabase
-  return 0
+  if (!isConfigured) return 0
+  const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
+
+  let query = supabase
+    .from('ventas')
+    .select('total')
+    .eq('estado', 'activa')
+    .eq('metodo_pago', 'efectivo')
+    .gte('fecha', hoy.toISOString())
+
+  if (branchId && branchId !== 'all') {
+    query = query.eq('sucursal_id', parseInt(branchId))
+  }
+
+  const { data, error } = await query
+  if (error) return 0
+  return data?.reduce((sum, s) => sum + Number(s.total), 0) || 0
 }
 
 export async function fetchQRIncome(branchId?: string): Promise<number> {
-  // TODO: Implementar llamada a Supabase
-  return 0
+  if (!isConfigured) return 0
+  const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
+
+  let query = supabase
+    .from('ventas')
+    .select('total')
+    .eq('estado', 'activa')
+    .eq('metodo_pago', 'qr')
+    .gte('fecha', hoy.toISOString())
+
+  if (branchId && branchId !== 'all') {
+    query = query.eq('sucursal_id', parseInt(branchId))
+  }
+
+  const { data, error } = await query
+  if (error) return 0
+  return data?.reduce((sum, s) => sum + Number(s.total), 0) || 0
 }
 
 export async function fetchInventoryAlerts(): Promise<InventoryAlert[]> {
-  // TODO: Implementar llamada a Supabase
-  // const { data } = await supabase
-  //   .from('products')
-  //   .select('*')
-  //   .lt('quantity', 'minimum_stock')
-  return []
+  if (!isConfigured) return []
+  const { data, error } = await supabase
+    .from('inventario')
+    .select(`
+      id,
+      cantidad,
+      minimo_alerta,
+      fecha_ingreso,
+      productos ( nombre )
+    `)
+
+  if (error || !data) return []
+
+  const ahora = new Date()
+  return data
+    .filter(item => item.cantidad <= item.minimo_alerta)
+    .map(item => {
+      const ingreso = new Date(item.fecha_ingreso)
+      const dias = Math.floor((ahora.getTime() - ingreso.getTime()) / (1000 * 60 * 60 * 24))
+      return {
+        id: String(item.id),
+        productName: (item.productos as any)?.nombre || 'Producto sin nombre',
+        currentStock: item.cantidad,
+        minimumStock: item.minimo_alerta,
+        daysInStock: dias >= 0 ? dias : 0
+      }
+    })
 }
 
 export async function fetchRecentSales(limit: number = 5, branchId?: string): Promise<Sale[]> {
-  // TODO: Implementar llamada a Supabase
-  // const { data } = await supabase
-  //   .from('sales')
-  //   .select('*')
-  //   .maybe_eq('branch_id', branchId)
-  //   .order('created_at', { ascending: false })
-  //   .limit(limit)
-  return []
+  if (!isConfigured) return []
+  let query = supabase
+    .from('ventas')
+    .select(`
+      id,
+      total,
+      metodo_pago,
+      fecha,
+      estado,
+      sucursales ( nombre )
+    `)
+    .order('fecha', { ascending: false })
+    .limit(limit)
+
+  if (branchId && branchId !== 'all') {
+    query = query.eq('sucursal_id', parseInt(branchId))
+  }
+
+  const { data, error } = await query
+  if (error || !data) return []
+
+  return data.map(sale => ({
+    id: String(sale.id),
+    branch: (sale.sucursales as any)?.nombre || 'General',
+    total: String(sale.total),
+    method: sale.metodo_pago.toUpperCase(),
+    date: new Date(sale.fecha).toLocaleDateString('es-BO', {
+      hour: '2-digit',
+      minute: '2-digit'
+    }),
+    estado: sale.estado as 'activa' | 'anulada'
+  }))
 }
 
 export async function fetchBranches(): Promise<Branch[]> {
-  // TODO: Implementar llamada a Supabase
-  // const { data } = await supabase
-  //   .from('branches')
-  //   .select('*')
-  return []
+  if (!isConfigured) return []
+  const { data, error } = await supabase
+    .from('sucursales')
+    .select('id, nombre')
+    .order('nombre', { ascending: true })
+
+  if (error || !data) return []
+  return data.map(b => ({
+    id: String(b.id),
+    name: b.nombre
+  }))
 }

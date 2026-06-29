@@ -1,185 +1,231 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase, mockSalesData } from '@/lib/supabase-client'
+import { supabase, fetchBranches, Branch } from '@/lib/supabase-client'
+import SalesTable from './sales-table'
 
-interface Sale {
-  id: number
-  date: string
+interface VentaProcesada {
+  id: string
   branch: string
-  product: string
-  quantity: number
-  amount: number
-  paymentMethod: string
+  total: string
+  method: string
+  date: string
+  estado: 'activa' | 'anulada'
 }
 
-interface Props {
-  branchId: number | null
-}
+export default function SalesView() {
+  const [selectedBranch, setSelectedBranch] = useState<string>('all')
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString())
+  const [selectedMonth, setSelectedMonth] = useState<string>('')
+  const [selectedDay, setSelectedDay] = useState<string>('')
 
-export default function SalesView({ branchId }: Props) {
-  const [sales, setSales] = useState<Sale[]>(mockSalesData)
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'cash' | 'qr'>('all')
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [sales, setSales] = useState<VentaProcesada[]>([])
+  const [loading, setLoading] = useState<boolean>(true)
+
+  const years = ['2024', '2025', '2026', '2027']
+  const months = [
+    { value: '01', label: 'Enero' }, { value: '02', label: 'Febrero' },
+    { value: '03', label: 'Marzo' }, { value: '04', label: 'Abril' },
+    { value: '05', label: 'Mayo' }, { value: '06', label: 'Junio' },
+    { value: '07', label: 'Julio' }, { value: '08', label: 'Agosto' },
+    { value: '09', label: 'Septiembre' }, { value: '10', label: 'Octubre' },
+    { value: '11', label: 'Noviembre' }, { value: '12', label: 'Diciembre' }
+  ]
 
   useEffect(() => {
-    fetchSales()
-  }, [branchId])
+    const loadBranches = async () => {
+      const data = await fetchBranches()
+      setBranches(data)
+    }
+    loadBranches()
+  }, [])
 
-  const fetchSales = async () => {
+  const fetchSalesData = async () => {
     try {
       setLoading(true)
       let query = supabase
-        .from('detalle_ventas')
+        .from('ventas')
         .select(`
-          id, cantidad, subtotal,
-          ventas!inner ( id, total, estado, metodo_pago, fecha, sucursales ( nombre ) ),
-          productos ( nombre )
+          id,
+          total,
+          metodo_pago,
+          fecha,
+          estado,
+          sucursales ( nombre )
         `)
-        .limit(50)
+        .order('fecha', { ascending: false })
 
-      if (branchId) query = query.eq('ventas.sucursal_id', branchId)
+      if (selectedBranch !== 'all') {
+        query = query.eq('sucursal_id', parseInt(selectedBranch))
+      }
+
+      if (selectedYear) {
+        let inicioStr = ''
+        let finStr = ''
+
+        if (selectedMonth) {
+          if (selectedDay) {
+            const diaFormateado = selectedDay.padStart(2, '0')
+            inicioStr = `${selectedYear}-${selectedMonth}-${diaFormateado}T00:00:00.000Z`
+            finStr = `${selectedYear}-${selectedMonth}-${diaFormateado}T23:59:59.999Z`
+          } else {
+            inicioStr = `${selectedYear}-${selectedMonth}-01T00:00:00.000Z`
+            const ultimoDia = new Date(parseInt(selectedYear), parseInt(selectedMonth), 0).getDate()
+            finStr = `${selectedYear}-${selectedMonth}-${ultimoDia}T23:59:59.999Z`
+          }
+        } else {
+          inicioStr = `${selectedYear}-01-01T00:00:00.000Z`
+          finStr = `${selectedYear}-12-31T23:59:59.999Z`
+        }
+
+        query = query.gte('fecha', inicioStr).lte('fecha', finStr)
+      }
 
       const { data, error } = await query
+      if (error) throw error
 
-      if (error) {
-        console.error('Error fetching sales:', error)
-        setSales(mockSalesData)
-      } else if (data) {
-        const flat: Sale[] = (data as any[])
-          .filter((d: any) => d.ventas && d.productos)
-          .map((d: any) => ({
-            id: d.id,
-            date: d.ventas.fecha,
-            branch: d.ventas.sucursales?.nombre || '-',
-            product: d.productos.nombre,
-            quantity: d.cantidad,
-            amount: d.subtotal,
-            paymentMethod: d.ventas.metodo_pago === 'efectivo' ? 'Efectivo' : 'QR',
-          }))
-          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        setSales(flat)
+      if (data) {
+        const mappedSales = data.map((v: any) => ({
+          id: String(v.id),
+          branch: v.sucursales?.nombre || 'General',
+          total: String(v.total),
+          method: v.metodo_pago.toUpperCase(),
+          date: new Date(v.fecha).toLocaleDateString('es-BO', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+          }),
+          estado: v.estado
+        }))
+        setSales(mappedSales)
       }
-    } catch (err) {
-      console.error('Error:', err)
-      setSales(mockSalesData)
+    } catch (error) {
+      console.error('Error cargando historial de ventas:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  const filteredSales = sales.filter(sale => {
-    if (filter === 'cash') return sale.paymentMethod === 'Efectivo'
-    if (filter === 'qr') return sale.paymentMethod === 'QR'
-    return true
-  })
+  useEffect(() => {
+    fetchSalesData()
+  }, [selectedBranch, selectedYear, selectedMonth, selectedDay])
 
-  const totalAmount = filteredSales.reduce((sum, sale) => sum + sale.amount, 0)
+  const totalRecaudado = sales
+    .filter(s => s.estado === 'activa')
+    .reduce((acc, curr) => acc + Number(curr.total), 0)
+
+  // Determinar si hay un filtro de fecha específico seleccionado por el usuario
+  const hasActiveFilter = selectedMonth !== '' || selectedDay !== ''
+
+  const getListTitle = () => {
+    if (selectedDay && selectedMonth) return `Ventas Registradas del Día ${selectedDay}/${selectedMonth}/${selectedYear}`
+    if (selectedMonth) return `Ventas Registradas de ${months.find(m => m.value === selectedMonth)?.label} ${selectedYear}`
+    return `Ventas Registradas del Año ${selectedYear}`
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Registro de Ventas</h2>
-        <button
-          onClick={fetchSales}
-          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-        >
-          Actualizar
-        </button>
+    <div className="space-y-6 text-gray-900">
+      {/* Caja Superior de Filtros */}
+      <div className="bg-white border border-gray-200 rounded-sm p-4">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
+          Filtros - Historial por Día / Mes / Año
+        </h2>
+
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          {/* Sucursal */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Sucursal</label>
+            <select
+              value={selectedBranch}
+              onChange={(e) => { setSelectedBranch(e.target.value); setSelectedDay(''); }}
+              className="w-full text-sm bg-white text-gray-900 border border-gray-200 h-9 px-2 rounded-sm focus:outline-none focus:border-gray-400"
+            >
+              <option value="all" className="text-gray-900 bg-white">Todas las Sucursales</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id} className="text-gray-900 bg-white">{b.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Año */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Año</label>
+            <select
+              value={selectedYear}
+              onChange={(e) => { setSelectedYear(e.target.value); setSelectedDay(''); }}
+              className="w-full text-sm bg-white text-gray-900 border border-gray-200 h-9 px-2 rounded-sm focus:outline-none focus:border-gray-400"
+            >
+              {years.map((y) => (
+                <option key={y} value={y} className="text-gray-900 bg-white">{y}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Mes */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Mes</label>
+            <select
+              value={selectedMonth}
+              onChange={(e) => { setSelectedMonth(e.target.value); setSelectedDay(''); }}
+              className="w-full text-sm bg-white text-gray-900 border border-gray-200 h-9 px-2 rounded-sm focus:outline-none focus:border-gray-400"
+            >
+              <option value="" className="text-gray-900 bg-white">Todos los meses</option>
+              {months.map((m) => (
+                <option key={m.value} value={m.value} className="text-gray-900 bg-white">{m.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Día */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Día del Mes</label>
+            <select
+              value={selectedDay}
+              disabled={!selectedMonth}
+              onChange={(e) => setSelectedDay(e.target.value)}
+              className="w-full text-sm bg-white text-gray-900 border border-gray-200 h-9 px-2 rounded-sm focus:outline-none focus:border-gray-400 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              <option value="" className="text-gray-900 bg-white">Todo el mes</option>
+              {selectedMonth && Array.from({ length: new Date(parseInt(selectedYear), parseInt(selectedMonth), 0).getDate() }, (_, i) => i + 1).map((d) => (
+                <option key={d} value={String(d)} className="text-gray-900 bg-white">{d}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
-      {/* Filter Buttons */}
-      <div className="flex gap-2">
-        <button
-          onClick={() => setFilter('all')}
-          className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
-            filter === 'all'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white border border-gray-300 text-gray-700 hover:border-gray-400'
-          }`}
-        >
-          Todas
-        </button>
-        <button
-          onClick={() => setFilter('cash')}
-          className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
-            filter === 'cash'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white border border-gray-300 text-gray-700 hover:border-gray-400'
-          }`}
-        >
-          Efectivo
-        </button>
-        <button
-          onClick={() => setFilter('qr')}
-          className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
-            filter === 'qr'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white border border-gray-300 text-gray-700 hover:border-gray-400'
-          }`}
-        >
-          QR
-        </button>
+      {/* Indicador de Desempeño Financiero */}
+      <div className="bg-white border border-gray-200 rounded-sm p-4">
+        <span className="text-xs font-medium text-gray-500 block">Total en el Período Seleccionado</span>
+        <span className="text-2xl font-bold tracking-tight text-gray-900">
+          Bs. {totalRecaudado.toLocaleString('es-BO', { minimumFractionDigits: 2 })}
+        </span>
       </div>
 
-      {/* Summary */}
-      <div className="bg-white rounded border border-gray-200 p-4">
-        <div className="text-sm text-gray-600">Total de ventas ({filteredSales.length})</div>
-        <div className="text-3xl font-bold text-gray-900">Bs. {totalAmount.toLocaleString()}</div>
-      </div>
-
-      {/* Sales Table */}
-      <div className="overflow-x-auto rounded border border-gray-200 bg-white">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Fecha</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Sucursal</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Producto</th>
-              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-900">Cantidad</th>
-              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-900">Monto</th>
-              <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Método</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                  Cargando...
-                </td>
-              </tr>
-            ) : filteredSales.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                  No hay ventas registradas
-                </td>
-              </tr>
-            ) : (
-              filteredSales.map((sale) => (
-                <tr key={sale.id} className="border-b border-gray-200 hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm text-gray-700">{sale.date}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{sale.branch}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{sale.product}</td>
-                  <td className="px-4 py-3 text-right text-sm text-gray-700">{sale.quantity}</td>
-                  <td className="px-4 py-3 text-right text-sm font-medium text-gray-900">
-                    Bs. {sale.amount.toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`inline-flex items-center rounded px-2.5 py-0.5 text-xs font-semibold ${
-                      sale.paymentMethod === 'Efectivo'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-blue-100 text-blue-800'
-                    }`}>
-                      {sale.paymentMethod}
-                    </span>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* RENDERIZADO CONDICIONAL DE LA TABLA */}
+      {loading ? (
+        <div className="bg-white border border-gray-200 rounded-sm p-8 text-center text-sm text-gray-400">
+          Buscando registros en Supabase...
+        </div>
+      ) : !hasActiveFilter ? (
+        /* Si Doña Mónica entra por primera vez y no ha tocado un mes o día, le pide que elija */
+        <div className="bg-white border border-gray-200 rounded-sm p-8 text-center text-sm text-gray-500 font-medium">
+          Selecciona un mes o un día específico arriba para desplegar el historial de transacciones.
+        </div>
+      ) : sales.length > 0 ? (
+        /* SI EXISTEN VENTAS EN LA FECHA SELECCIONADA: Se muestra la tabla de forma impecable */
+        <div className="bg-white border border-gray-200 rounded-sm p-4">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-sm font-semibold text-gray-900">{getListTitle()}</h3>
+          </div>
+          <SalesTable sales={sales} />
+        </div>
+      ) : (
+        /* SI NO HUBO VENTAS: La tabla desaparece por completo y muestra un aviso limpio */
+        <div className="bg-white border border-gray-200 rounded-sm p-8 text-center text-sm text-gray-400 border-dashed">
+          No se registraron ventas en la fecha seleccionada.
+        </div>
+      )}
     </div>
   )
 }
