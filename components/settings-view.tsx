@@ -103,6 +103,19 @@ export default function SettingsView() {
     setEditActivo(emp.activo)
   }
 
+  const eliminarEmpleada = async (id: number, nombre: string) => {
+    if (confirm(`¿Está seguro de eliminar a "${nombre}"?\n\nEsta acción eliminará únicamente su acceso al sistema.\nEl historial de ventas y registros permanecerá intacto.`)) {
+      const { error } = await supabase.from('usuarios').delete().eq('id', id)
+      if (error) {
+        alert('Error al eliminar la empleada')
+      } else {
+        setMensaje('Empleada eliminada correctamente')
+        fetchEmpleadas()
+      }
+      setTimeout(() => setMensaje(''), 3000)
+    }
+  }
+
   const guardarCambiosEmpleada = async (id: number) => {
     if (editPin.length !== 4) {
       alert('El PIN debe tener exactamente 4 dígitos')
@@ -128,7 +141,7 @@ export default function SettingsView() {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Configuración del Sistema</h2>
       </div>
@@ -136,7 +149,7 @@ export default function SettingsView() {
       {/* SEGURIDAD: Cambiar PIN del Administrador */}
       <div className="bg-white rounded border border-gray-200 p-6">
         <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-gray-700">Seguridad - PIN Administrador</h3>
-        <form onSubmit={actualizarPinAdmin} className="max-w-sm space-y-4">
+        <form onSubmit={actualizarPinAdmin} className="max-w-md space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Nuevo PIN de Acceso (4 dígitos)</label>
             <input
@@ -330,12 +343,20 @@ export default function SettingsView() {
                             </button>
                           </>
                         ) : (
-                          <button
-                            onClick={() => iniciarEdicion(emp)}
-                            className="text-xs text-blue-600 font-semibold hover:text-blue-800 transition-colors"
-                          >
-                            Modificar
-                          </button>
+                          <>
+                            <button
+                              onClick={() => iniciarEdicion(emp)}
+                              className="text-xs text-blue-600 font-semibold hover:text-blue-800 transition-colors"
+                            >
+                              Modificar
+                            </button>
+                            <button
+                              onClick={() => eliminarEmpleada(emp.id, emp.nombre)}
+                              className="text-xs text-red-600 font-semibold hover:text-red-800 transition-colors"
+                            >
+                              Eliminar
+                            </button>
+                          </>
                         )}
                       </td>
                     </tr>

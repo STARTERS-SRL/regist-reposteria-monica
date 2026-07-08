@@ -769,8 +769,8 @@ export default function PosView() {
         <span className="text-xs text-blue-800 font-medium">📸 Foto de apertura guardada con éxito. Registrando ventas activas.</span>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-3">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="md:col-span-1 lg:col-span-2 space-y-3">
           <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Catálogo de Repostería</h3>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {productos.map((producto) => {

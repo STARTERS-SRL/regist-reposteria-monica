@@ -23,37 +23,33 @@ export default function Sidebar({ isOpen, onToggle, activeMenu, onMenuSelect, ro
   return (
     <>
       {/* Sidebar - Desktop */}
-      <aside
-        className={`hidden w-64 bg-gray-900 transition-all duration-300 md:flex md:flex-col ${
-          isOpen ? 'md:w-64' : 'md:w-20'
-        }`}
-      >
+      <aside className="hidden w-60 bg-gray-900 md:flex md:flex-col">
         {/* Logo Area */}
-        <div className="flex h-16 items-center justify-center border-b border-gray-800 px-4">
-          <div className="text-white">
-            <div className="text-xl font-bold">RP</div>
+        <div className="flex h-16 items-center border-b border-gray-800 px-4">
+          <div className="flex items-center gap-3 text-white">
+            <span className="text-xl font-bold">RP</span>
           </div>
         </div>
 
         {/* Menu Items */}
-        <nav className="flex-1 space-y-2 px-3 py-6">
+        <nav className="flex-1 space-y-1 px-3 py-4">
           {menuItems.map((item) => (
             <button
               key={item.value}
               onClick={() => onMenuSelect(item.value)}
-              className={`w-full rounded px-4 py-3 text-left text-sm font-medium transition-colors ${
+              className={`w-full rounded px-3 py-2.5 text-left text-sm font-medium transition-colors ${
                 activeMenu === item.value
                   ? 'bg-blue-600 text-white'
                   : 'text-gray-300 hover:bg-gray-800 hover:text-white'
               }`}
             >
-              <span className={isOpen ? 'block' : 'hidden md:block'}>{item.label}</span>
+              {item.label}
             </button>
           ))}
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-gray-800 p-4">
+        <div className="border-t border-gray-800 p-3">
           <button
             onClick={() => {
               localStorage.removeItem('usuario')
@@ -61,7 +57,7 @@ export default function Sidebar({ isOpen, onToggle, activeMenu, onMenuSelect, ro
             }}
             className="w-full rounded bg-gray-800 px-3 py-2 text-center text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white"
           >
-            {isOpen ? 'Cerrar sesion' : 'X'}
+            Cerrar sesion
           </button>
         </div>
       </aside>
