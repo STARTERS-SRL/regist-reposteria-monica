@@ -7,14 +7,16 @@ interface SidebarProps {
   onToggle: () => void
   activeMenu: string
   onMenuSelect: (menu: string) => void
+  rol?: string
 }
 
-export default function Sidebar({ isOpen, onToggle, activeMenu, onMenuSelect }: SidebarProps) {
+export default function Sidebar({ isOpen, onToggle, activeMenu, onMenuSelect, rol }: SidebarProps) {
   const menuItems = [
     { label: 'Dashboard', value: 'dashboard' },
     { label: 'Punto de Venta', value: 'pos' },
     { label: 'Ventas', value: 'ventas' },
     { label: 'Inventario', value: 'inventario' },
+    ...(rol === 'admin' ? [{ label: 'Productos', value: 'productos' }] : []),
     { label: 'Configuración', value: 'configuracion' },
   ]
 

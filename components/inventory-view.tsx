@@ -1,21 +1,32 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase, fetchBranches, Branch } from '@/lib/supabase-client'
+import { supabase } from '@/lib/supabase-client'
 
 interface InventoryItem {
   id: number
   sucursal_id: number
   producto_id: number
-  sucursal: string
-  producto: string
   cantidad: number
   minimo_alerta: number
   fecha_ingreso: string
-  antiguedadDias: number
+  productos: {
+    id?: number
+    nombre: string
+    precio: number
+  }
+  sucursales?: {
+    nombre: string
+  }
 }
 
-interface ProductoLista {
+interface ProductoCatalogo {
+  id: number
+  nombre: string
+  precio: number
+}
+
+interface SucursalCatalogo {
   id: number
   nombre: string
 }
@@ -26,314 +37,473 @@ interface Props {
 
 export default function InventoryView({ branchId }: Props) {
   const [inventory, setInventory] = useState<InventoryItem[]>([])
-  const [branches, setBranches] = useState<Branch[]>([])
-  const [productsList, setProductsList] = useState<ProductoLista[]>([])
+  const [productos, setProductos] = useState<ProductoCatalogo[]>([])
+  const [sucursales, setSucursales] = useState<SucursalCatalogo[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Estados para el Modal de Agregar Registro
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [newBranchId, setNewBranchId] = useState('')
-  const [newProductId, setNewProductId] = useState('')
-  const [newQuantity, setNewQuantity] = useState(0)
+  // Estados para Añadir Producto
+  const [isAdding, setIsAdding] = useState(false)
+  const [newProductoId, setNewProductoId] = useState('')
+  const [newSucursalId, setNewSucursalId] = useState('')
+  const [newPrecio, setNewPrecio] = useState('')
+  const [newCantidad, setNewCantidad] = useState('0')
+  const [newMinimo, setNewMinimo] = useState('2')
+
+  // NUEVOS ESTADOS: Para controlar la edición en línea de la fila elegida
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editProductoId, setEditProductoId] = useState('')
+  const [editSucursalId, setEditSucursalId] = useState('')
+  const [editPrecio, setEditPrecio] = useState('')
+  const [editCantidad, setEditCantidad] = useState('')
+  const [editMinimo, setEditMinimo] = useState('')
 
   useEffect(() => {
     fetchInventory()
-    loadFormOptions()
+    fetchCatalogos()
   }, [branchId])
 
-  const loadFormOptions = async () => {
-    const branchData = await fetchBranches()
-    setBranches(branchData)
+  useEffect(() => {
+    if (branchId) {
+      setNewSucursalId(branchId.toString())
+    } else {
+      setNewSucursalId('')
+    }
+  }, [isAdding, branchId])
 
-    const { data: prodData } = await supabase
-      .from('productos')
-      .select('id, nombre')
-      .order('nombre', { ascending: true })
-    if (prodData) setProductsList(prodData)
+  const fetchCatalogos = async () => {
+    const { data: prods } = await supabase.from('productos').select('id, nombre, precio').eq('activo', true)
+    const { data: sucs } = await supabase.from('sucursales').select('id, nombre')
+    if (prods) setProductos(prods)
+    if (sucs) setSucursales(sucs)
   }
 
   const fetchInventory = async () => {
-    try {
-      setLoading(true)
-      let query = supabase
-        .from('inventario')
-        .select(`
-          id, sucursal_id, producto_id, cantidad, minimo_alerta, fecha_ingreso,
-          productos ( nombre ),
-          sucursales ( nombre )
-        `)
+    setLoading(true)
+    let query = supabase
+      .from('inventario')
+      .select('id, sucursal_id, producto_id, cantidad, minimo_alerta, fecha_ingreso, productos(id, nombre, precio, activo), sucursales(nombre)')
 
-      if (branchId) query = query.eq('sucursal_id', branchId)
+    if (branchId) {
+      query = query.eq('sucursal_id', branchId)
+    }
 
-      const { data } = await query
+    const { data, error } = await query.order('id', { ascending: true })
 
-      if (data) {
-        // Obtenemos la fecha de hoy a la medianoche en hora local para comparar días enteros
-        const hoy = new Date()
-        hoy.setHours(0, 0, 0, 0)
+    if (error) {
+      console.error('Error fetching inventory:', error)
+    } else if (data) {
+      setInventory((data as any[]).filter((item: any) => item.productos?.activo !== false) as unknown as InventoryItem[])
+    }
+    setLoading(false)
+  }
 
-        setInventory(
-          (data as any[])
-            .filter((d) => d.productos)
-            .map((d) => {
-              const fechaIngreso = new Date(d.fecha_ingreso)
+  // Activa el modo edición sobre una fila rellenando los estados con los datos que ya existen
+  const startEditing = (item: InventoryItem) => {
+    setEditingId(item.id)
+    setEditProductoId(item.producto_id.toString())
+    setEditSucursalId(item.sucursal_id.toString())
+    setEditPrecio((item.productos?.precio || 0).toString())
+    setEditCantidad(item.cantidad.toString())
+    setEditMinimo((item.minimo_alerta ?? 2).toString())
+  }
 
-              // Forzar ambas fechas a la medianoche para calcular la diferencia neta en días calendarios
-              const fechaIngresoPlana = new Date(fechaIngreso.getFullYear(), fechaIngreso.getMonth(), fechaIngreso.getDate())
-              const hoyPlano = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
-
-              const diferenciaTiempo = hoyPlano.getTime() - fechaIngresoPlana.getTime()
-              const dias = Math.floor(diferenciaTiempo / (1000 * 60 * 60 * 24))
-
-              return {
-                id: d.id,
-                sucursal_id: d.sucursal_id,
-                producto_id: d.producto_id,
-                sucursal: d.sucursales?.nombre || 'General',
-                producto: d.productos.nombre,
-                cantidad: d.cantidad,
-                minimo_alerta: d.minimo_alerta || 2,
-                fecha_ingreso: fechaIngreso.toLocaleDateString('es-BO'),
-                antiguedadDias: dias >= 0 ? dias : 0,
-              }
-            })
-        )
-      }
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
+  // Maneja el cambio de producto dentro de la edición para auto-moldear el precio
+  const handleSelectProductEditChange = (prodIdStr: string) => {
+    setEditProductoId(prodIdStr)
+    const prodSeleccionado = productos.find(p => p.id === parseInt(prodIdStr))
+    if (prodSeleccionado) {
+      setEditPrecio(prodSeleccionado.precio.toString())
     }
   }
 
-  // Cambiar cantidad de stock de forma inmediata (+1 / -1)
-  const handleUpdateStock = async (itemId: number, cantidadActual: number, cambio: number) => {
-    const nuevaCantidad = cantidadActual + cambio
-    if (nuevaCantidad < 0) return
+  // GUARDA la fila modificada directamente en la base de datos
+  const handleSaveEdit = async (id: number) => {
+    if (!editProductoId || !editSucursalId) {
+      alert('Por favor, complete todos los campos requeridos.')
+      return
+    }
+
+    // Actualiza el precio del producto si se modificó en caliente
+    if (editPrecio) {
+      await supabase
+        .from('productos')
+        .update({ precio: parseFloat(editPrecio) })
+        .eq('id', parseInt(editProductoId))
+    }
 
     const { error } = await supabase
       .from('inventario')
-      .update({ cantidad: nuevaCantidad })
-      .eq('id', itemId)
+      .update({
+        producto_id: parseInt(editProductoId),
+        sucursal_id: parseInt(editSucursalId),
+        cantidad: parseInt(editCantidad) || 0,
+        minimo_alerta: parseInt(editMinimo) || 2
+      })
+      .eq('id', id)
 
-    if (!error) {
-      setInventory(prev =>
-        prev.map(item => (item.id === itemId ? { ...item, cantidad: nuevaCantidad } : item))
-      )
+    if (error) {
+      console.error('Error al actualizar registro:', error)
+      alert('Error al guardar las modificaciones.')
+    } else {
+      setEditingId(null)
+      fetchInventory()
     }
   }
 
-  // Eliminar un lote completo del inventario
-  const handleDeleteItem = async (itemId: number) => {
-    if (!confirm('¿Estás segura de eliminar este registro del inventario? Doña Mónica')) return
-
-    const { error } = await supabase
-      .from('inventario')
-      .delete()
-      .eq('id', itemId)
-
-    if (!error) {
-      setInventory(prev => prev.filter(item => item.id !== itemId))
+  const handleDeleteInventory = async (id: number) => {
+    if (confirm('¿Está seguro de eliminar este producto por completo del inventario?')) {
+      const { error } = await supabase.from('inventario').delete().eq('id', id)
+      if (!error) setInventory(prev => prev.filter(item => item.id !== id))
     }
   }
 
-  // Guardar nuevo registro
-  const handleCreateInventory = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newBranchId || !newProductId) return alert('Selecciona sucursal y producto')
+  const handleSelectProductChange = (prodIdStr: string) => {
+    setNewProductoId(prodIdStr)
+    const prodSeleccionado = productos.find(p => p.id === parseInt(prodIdStr))
+    if (prodSeleccionado) {
+      setNewPrecio(prodSeleccionado.precio.toString())
+    }
+  }
+
+  const handleSaveNewProduct = async () => {
+    const sucursalDestino = branchId || parseInt(newSucursalId) || 1
+
+    if (!newProductoId) {
+      alert('Por favor, seleccione un producto válido de la lista.')
+      return
+    }
+
+    if (newPrecio) {
+      await supabase
+        .from('productos')
+        .update({ precio: parseFloat(newPrecio) })
+        .eq('id', parseInt(newProductoId))
+    }
 
     const { error } = await supabase
       .from('inventario')
       .insert([
         {
-          sucursal_id: parseInt(newBranchId),
-          producto_id: parseInt(newProductId),
-          cantidad: newQuantity,
-        },
+          sucursal_id: sucursalDestino,
+          producto_id: parseInt(newProductoId),
+          cantidad: parseInt(newCantidad) || 0,
+          minimo_alerta: parseInt(newMinimo) || 2,
+          fecha_ingreso: new Date().toISOString()
+        }
       ])
 
-    if (!error) {
-      setIsModalOpen(false)
-      setNewQuantity(0)
-      fetchInventory()
+    if (error) {
+      console.error(error)
+      alert('Error al guardar el artículo.')
     } else {
-      alert('Error al insertar registro. Verifica si ya existe en esa sucursal.')
+      setIsAdding(false)
+      setNewProductoId('')
+      setNewCantidad('0')
+      setNewMinimo('2')
+      fetchInventory()
     }
   }
 
   return (
-    <div className="space-y-6 text-gray-900">
-      {/* Encabezado */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
-          Control de Inventario y Antigüedad
-        </h2>
-        <div className="space-x-2">
+    <div className="rounded border border-gray-200 bg-white">
+      <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-900">Control de Existencias y Frescura</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {branchId ? 'Vista por Sucursal Comercial' : 'Vista Corporativa Global (Todas las Sucursales)'}
+          </p>
+        </div>
+
+        <div className="flex gap-2">
           <button
-            onClick={() => setIsModalOpen(true)}
-            className="rounded-sm bg-gray-900 px-4 h-9 text-xs font-semibold uppercase tracking-wider text-white transition-colors hover:bg-gray-800"
+            onClick={() => setIsAdding(!isAdding)}
+            className="rounded-sm bg-gray-900 px-3 py-1 text-xs font-semibold text-white hover:bg-gray-800 ready-transition"
           >
-            + Agregar Lote
+            {isAdding ? 'Cancelar' : '+ Añadir Producto'}
           </button>
-          <button
-            onClick={fetchInventory}
-            className="rounded-sm border border-gray-200 bg-white px-4 h-9 text-xs font-semibold uppercase tracking-wider text-gray-700 transition-colors hover:bg-gray-50"
-          >
-            Actualizar
+
+          <button onClick={fetchInventory} className="rounded-sm bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-200 ready-transition">
+            Sincronizar
           </button>
         </div>
       </div>
 
-      {/* Tabla Principal */}
-      <div className="overflow-x-auto rounded-sm border border-gray-200 bg-white">
-        <table className="w-full">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Sucursal</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Producto</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Cantidad Actual</th>
-              <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Estado</th>
-              <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Antigüedad</th>
-              <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Fecha Ingreso</th>
-              <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Acciones</th>
+            <tr className="border-b border-gray-200 bg-gray-50 text-xs font-bold uppercase tracking-wider text-gray-700">
+              <th className="px-6 py-3">Producto</th>
+              <th className="px-6 py-3">Sucursal</th>
+              <th className="px-6 py-3">Precio</th>
+              <th className="px-6 py-3 w-44">Stock Físico</th>
+              <th className="px-6 py-3">Alertas Operativas</th>
+              <th className="px-6 py-3">Fecha de Ingreso</th>
+              <th className="px-6 py-3 text-right">Acciones</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-gray-100 text-sm">
+
+            {/* Formulario Dinámico para Añadir Nuevo Producto */}
+            {isAdding && (
+              <tr className="bg-blue-50/40 border-b border-blue-100">
+                <td className="px-6 py-3">
+                  <select
+                    value={newProductoId}
+                    onChange={(e) => handleSelectProductChange(e.target.value)}
+                    className="w-full rounded border border-gray-300 p-1.5 text-xs text-gray-900 bg-white font-medium focus:outline-none"
+                  >
+                    <option value="">-- Seleccionar --</option>
+                    {productos.map(p => (
+                      <option key={p.id} value={p.id}>{p.nombre}</option>
+                    ))}
+                  </select>
+                </td>
+                <td className="px-6 py-3">
+                  <select
+                    value={newSucursalId}
+                    disabled={!!branchId}
+                    onChange={(e) => setNewSucursalId(e.target.value)}
+                    className="w-full rounded border border-gray-300 p-1.5 text-xs text-gray-900 bg-white disabled:bg-gray-100 disabled:text-gray-500 font-medium focus:outline-none"
+                  >
+                    <option value="">-- Sucursal --</option>
+                    {sucursales.map(s => (
+                      <option key={s.id} value={s.id}>{s.nombre}</option>
+                    ))}
+                  </select>
+                </td>
+                <td className="px-6 py-3">
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-500 font-medium">Bs.</span>
+                    <input
+                      type="number"
+                      value={newPrecio}
+                      onChange={(e) => setNewPrecio(e.target.value)}
+                      className="w-20 rounded border border-gray-300 p-1.5 text-xs text-gray-900 bg-white font-bold focus:outline-none"
+                    />
+                  </div>
+                </td>
+                <td className="px-6 py-3">
+                  <div className="flex flex-col gap-1">
+                    <input
+                      type="number"
+                      value={newCantidad}
+                      onChange={(e) => setNewCantidad(e.target.value)}
+                      className="w-24 rounded border border-gray-300 p-1.5 text-xs text-gray-900 bg-white font-bold focus:outline-none"
+                    />
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className="text-[10px] text-gray-500">Mín:</span>
+                      <input
+                        type="number"
+                        value={newMinimo}
+                        onChange={(e) => setNewMinimo(e.target.value)}
+                        className="w-12 rounded border border-gray-200 p-0.5 text-[10px] text-gray-900 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-3">
+                  {(() => {
+                    const cant = parseInt(newCantidad) || 0
+                    const min = parseInt(newMinimo) || 2
+                    return cant === 0 ? (
+                      <span className="rounded-sm bg-red-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white border border-red-700">Agotado</span>
+                    ) : cant <= min ? (
+                      <span className="rounded-sm bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase text-red-700 border border-red-200">Agotándose</span>
+                    ) : (
+                      <span className="rounded-sm bg-green-50 px-2 py-0.5 text-[10px] font-bold uppercase text-green-700 border border-green-200">Normal</span>
+                    )
+                  })()}
+                </td>
+                <td className="px-6 py-3 text-xs text-gray-400 font-medium">Hoy</td>
+                <td className="px-6 py-3 text-right">
+                  <button
+                    onClick={handleSaveNewProduct}
+                    className="rounded-sm bg-green-600 px-3 py-1 text-xs font-bold text-white hover:bg-green-700 active:scale-95 transition-all"
+                  >
+                    Guardar
+                  </button>
+                </td>
+              </tr>
+            )}
+
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-400">Consultando stock real...</td>
+                <td colSpan={7} className="px-6 py-8 text-center text-gray-500">Analizando vitrinas en tiempo real...</td>
               </tr>
             ) : inventory.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-400">Sin registros en esta sucursal</td>
+                <td colSpan={7} className="px-6 py-8 text-center text-gray-500 italic">No hay productos vinculados.</td>
               </tr>
             ) : (
-              inventory.map((item) => (
-                <tr key={item.id} className="border-b border-gray-200 hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm text-gray-600">{item.sucursal}</td>
-                  <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.producto}</td>
+              inventory.map((item) => {
+                const ahora = new Date()
+                const fechaIngreso = new Date(item.fecha_ingreso)
+                const diasEnEstante = Math.floor((ahora.getTime() - fechaIngreso.getTime()) / (1000 * 60 * 60 * 24))
 
-                  {/* Celda Cantidad con Modificadores rapidos */}
-                  <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">
-                    <div className="flex items-center justify-end space-x-2">
+                // APARTADO NUEVO: RENDERIZAR FILA EN MODO EDICIÓN (Punto Solicitado)
+                if (editingId === item.id) {
+                  return (
+                    <tr key={item.id} className="bg-amber-50/40 border-b border-amber-200">
+                      {/* Producto modificable */}
+                      <td className="px-6 py-3">
+                        <select
+                          value={editProductoId}
+                          onChange={(e) => handleSelectProductEditChange(e.target.value)}
+                          className="w-full rounded border border-gray-300 p-1.5 text-xs text-gray-900 bg-white font-medium focus:outline-none"
+                        >
+                          {productos.map(p => (
+                            <option key={p.id} value={p.id}>{p.nombre}</option>
+                          ))}
+                        </select>
+                      </td>
+                      {/* Sucursal modificable */}
+                      <td className="px-6 py-3">
+                        <select
+                          value={editSucursalId}
+                          onChange={(e) => setEditSucursalId(e.target.value)}
+                          className="w-full rounded border border-gray-300 p-1.5 text-xs text-gray-900 bg-white font-medium focus:outline-none"
+                        >
+                          {sucursales.map(s => (
+                            <option key={s.id} value={s.id}>{s.nombre}</option>
+                          ))}
+                        </select>
+                      </td>
+                      {/* Precio modificable */}
+                      <td className="px-6 py-3">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500 font-medium">Bs.</span>
+                          <input
+                            type="number"
+                            value={editPrecio}
+                            onChange={(e) => setEditPrecio(e.target.value)}
+                            className="w-20 rounded border border-gray-300 p-1.5 text-xs text-gray-900 bg-white font-bold focus:outline-none"
+                          />
+                        </div>
+                      </td>
+                      {/* Cantidad/Stock modificable */}
+                      <td className="px-6 py-3">
+                        <div className="flex flex-col gap-1">
+                          <input
+                            type="number"
+                            value={editCantidad}
+                            onChange={(e) => setEditCantidad(e.target.value)}
+                            className="w-24 rounded border border-gray-300 p-1.5 text-xs text-gray-900 bg-white font-bold focus:outline-none"
+                          />
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="text-[10px] text-gray-500">Mín:</span>
+                            <input
+                              type="number"
+                              value={editMinimo}
+                              onChange={(e) => setEditMinimo(e.target.value)}
+                              className="w-12 rounded border border-gray-200 p-0.5 text-[10px] text-gray-900 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      {/* Alerta interactiva automatizada sobre lo editado */}
+                      <td className="px-6 py-3">
+                        {(() => {
+                          const cant = parseInt(editCantidad) || 0
+                          const min = parseInt(editMinimo) || 2
+                          return cant === 0 ? (
+                            <span className="rounded-sm bg-red-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white border border-red-700">Agotado</span>
+                          ) : cant <= min ? (
+                            <span className="rounded-sm bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase text-red-700 border border-red-200">Agotándose</span>
+                          ) : (
+                            <span className="rounded-sm bg-green-50 px-2 py-0.5 text-[10px] font-bold uppercase text-green-700 border border-green-200">Normal</span>
+                          )
+                        })()}
+                      </td>
+                      <td className="px-6 py-3 text-xs text-gray-400 font-medium">Conservada</td>
+                      <td className="px-6 py-3 text-right space-x-2">
+                        <button
+                          onClick={() => handleSaveEdit(item.id)}
+                          className="rounded-sm bg-green-600 px-2 py-1 text-xs font-bold text-white hover:bg-green-700 active:scale-95 transition-all"
+                        >
+                          Guardar
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="rounded-sm bg-gray-200 px-2 py-1 text-xs font-bold text-gray-600 hover:bg-gray-300 active:scale-95 transition-all"
+                        >
+                          X
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                }
+
+                // MODO VISTA NORMAL DE LAS FILAS
+                const esAgotado = item.cantidad === 0
+                const esAgotandose = item.cantidad <= (item.minimo_alerta ?? 2) && item.cantidad > 0
+                const esAntiguo = diasEnEstante >= 4 && item.cantidad > 0
+
+                return (
+                  <tr key={item.id} className="hover:bg-gray-50/50 ready-transition">
+                    <td className="px-6 py-4 font-medium text-gray-900 uppercase text-xs tracking-wide">
+                      {item.productos?.nombre || '-'}
+                    </td>
+
+                    <td className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase">
+                      {item.sucursales?.nombre || '-'}
+                    </td>
+
+                    <td className="px-6 py-4 text-gray-600 font-medium">
+                      Bs. {Number(item.productos?.precio || 0).toLocaleString('es-BO')}
+                    </td>
+
+                    <td className="px-6 py-4 font-semibold text-gray-900">
+                      {item.cantidad} unidades
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-1.5">
+                        {esAgotado ? (
+                          <span className="rounded-sm bg-red-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white border border-red-700">
+                            Agotado
+                          </span>
+                        ) : esAgotandose ? (
+                          <span className="rounded-sm bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase text-red-700 border border-red-200">
+                            Agotándose
+                          </span>
+                        ) : (
+                          <span className="rounded-sm bg-green-50 px-2 py-0.5 text-[10px] font-bold uppercase text-green-700 border border-green-200">
+                            Normal
+                          </span>
+                        )}
+
+                        {esAntiguo && (
+                          <span className="rounded-sm bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800 border border-amber-200">
+                            🕒 ESTANCADO ({diasEnEstante}d)
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-xs text-gray-500">
+                      {fechaIngreso.toLocaleDateString('es-BO')} — Hace {diasEnEstante} {diasEnEstante === 1 ? 'día' : 'días'}
+                    </td>
+
+                    <td className="px-6 py-4 text-right text-xs font-semibold space-x-3">
                       <button
-                        onClick={() => handleUpdateStock(item.id, item.cantidad, -1)}
-                        className="px-1.5 py-0.5 border border-gray-200 bg-gray-50 rounded-sm text-xs hover:bg-gray-100"
+                        onClick={() => startEditing(item)}
+                        className="text-blue-600 hover:text-blue-800 uppercase tracking-wider text-[11px] font-bold active:scale-95 transition-all"
                       >
-                        -
+                        Editar
                       </button>
-                      <span className="w-8 text-center">{item.cantidad}</span>
                       <button
-                        onClick={() => handleUpdateStock(item.id, item.cantidad, 1)}
-                        className="px-1.5 py-0.5 border border-gray-200 bg-gray-50 rounded-sm text-xs hover:bg-gray-100"
+                        onClick={() => handleDeleteInventory(item.id)}
+                        className="text-red-600 hover:text-red-800 uppercase tracking-wider text-[11px] font-bold active:scale-95 transition-all"
                       >
-                        +
+                        Eliminar
                       </button>
-                    </div>
-                  </td>
-
-                  {/* Estado Condicional */}
-                  <td className="px-4 py-3 text-center">
-                    <span className={`inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-semibold ${item.cantidad === 0
-                        ? 'bg-red-200 text-red-900 border border-red-400 font-bold'
-                        : item.cantidad <= item.minimo_alerta
-                          ? 'bg-red-50 text-red-700 border border-red-200'
-                          : 'bg-green-50 text-green-700 border border-green-200'
-                      }`}>
-                      {item.cantidad === 0 ? 'Agotado' : item.cantidad <= item.minimo_alerta ? 'Agotándose' : 'Normal'}
-                    </span>
-                  </td>
-
-                  {/* Antigüedad Calculada Exacta */}
-                  <td className="px-4 py-3 text-center text-sm">
-                    <span className={`font-medium ${item.antiguedadDias >= 1 ? 'text-amber-600 font-semibold' : 'text-gray-600'}`}>
-                      {item.antiguedadDias === 0 ? 'Hoy' : item.antiguedadDias === 1 ? '1 día' : `${item.antiguedadDias} días`}
-                    </span>
-                  </td>
-
-                  <td className="px-4 py-3 text-center text-sm text-gray-500">{item.fecha_ingreso}</td>
-
-                  {/* Botón Eliminar */}
-                  <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={() => handleDeleteItem(item.id)}
-                      className="text-xs uppercase tracking-wider text-red-500 font-semibold hover:underline"
-                    >
-                      Eliminar
-                    </button>
-                  </td>
-                </tr>
-              ))
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>
       </div>
-
-      {/* MODAL SOBREPUESTO PARA AGREGAR NUEVO LOTE */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white border border-gray-300 rounded-sm max-w-md w-full p-6 shadow-xl space-y-4 text-gray-900">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-gray-700">Registrar Lote en Inventario</h3>
-
-            <form onSubmit={handleCreateInventory} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Sucursal Destino</label>
-                <select
-                  value={newBranchId}
-                  onChange={(e) => setNewBranchId(e.target.value)}
-                  className="w-full text-sm bg-white text-gray-900 border border-gray-200 h-9 px-2 rounded-sm focus:outline-none focus:border-gray-400"
-                >
-                  <option value="" className="text-gray-900 bg-white">Selecciona Sucursal</option>
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id} className="text-gray-900 bg-white">{b.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Producto</label>
-                <select
-                  value={newProductId}
-                  onChange={(e) => setNewProductId(e.target.value)}
-                  className="w-full text-sm bg-white text-gray-900 border border-gray-200 h-9 px-2 rounded-sm focus:outline-none focus:border-gray-400"
-                >
-                  <option value="" className="text-gray-900 bg-white">Selecciona Producto</option>
-                  {productsList.map(p => (
-                    <option key={p.id} value={p.id} className="text-gray-900 bg-white">{p.nombre}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Cantidad Inicial</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={newQuantity}
-                  onChange={(e) => setNewQuantity(parseInt(e.target.value) || 0)}
-                  className="w-full text-sm bg-white text-gray-900 border border-gray-200 h-9 px-2 rounded-sm focus:outline-none focus:border-gray-400"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="rounded-sm border border-gray-200 bg-white px-4 h-9 text-xs font-semibold uppercase tracking-wider text-gray-600 hover:bg-gray-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-sm bg-gray-900 px-4 h-9 text-xs font-semibold uppercase tracking-wider text-white hover:bg-gray-800"
-                >
-                  Guardar Lote
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

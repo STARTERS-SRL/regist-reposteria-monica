@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase-client'
 import Sidebar from './sidebar'
 import Header from './header'
 import SalesCards from './sales-cards'
@@ -9,11 +10,83 @@ import SalesView from './sales-view'
 import InventoryView from './inventory-view'
 import SettingsView from './settings-view'
 import PosView from './pos-view'
+import ProductsView from './products-view'
+
+interface Sale {
+  id: string
+  branch: string
+  total: string
+  method: string
+  date: string
+  estado: 'activa' | 'anulada'
+  vendedor: string
+}
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null)
   const [activeMenu, setActiveMenu] = useState('dashboard')
+  const [rol, setRol] = useState<string>('')
+
+  useEffect(() => {
+    const stored = localStorage.getItem('usuario')
+    if (stored) {
+      const user = JSON.parse(stored)
+      setRol(user.rol || '')
+    }
+  }, [])
+
+  // NUEVOS ESTADOS EXCLUSIVOS PARA LAS VENTAS DE HOY DEL DASHBOARD
+  const [todaySales, setTodaySales] = useState<Sale[]>([])
+  const [loadingSales, setLoadingSales] = useState(false)
+
+  // EFECTO PARA TRAER LAS VENTAS DE HOY AUTOMÁTICAMENTE CUANDO CAMBIE LA SUCURSAL O EL MENÚ
+  useEffect(() => {
+    if (activeMenu !== 'dashboard') return
+
+    async function fetchTodaySales() {
+      try {
+        setLoadingSales(true)
+        const startOfToday = new Date()
+        startOfToday.setHours(0, 0, 0, 0)
+
+        let query = supabase
+          .from('ventas')
+          .select('id, total, metodo_pago, fecha, estado, sucursales(nombre), usuario_id, usuarios(nombre)')
+          .gte('fecha', startOfToday.toISOString())
+          .order('fecha', { ascending: false })
+
+        if (selectedBranchId) {
+          query = query.eq('sucursal_id', selectedBranchId)
+        }
+
+        const { data, error } = await query
+        if (error) throw error
+
+        if (data) {
+          setTodaySales(
+            data.map((v: any) => ({
+              id: String(v.id),
+              branch: v.sucursales?.nombre || '-',
+              total: String(v.total),
+              method: v.metodo_pago === 'efectivo' ? 'Efectivo' : 'QR',
+              date: new Date(v.fecha).toLocaleDateString('es-BO', {
+                hour: '2-digit', minute: '2-digit'
+              }),
+              estado: v.estado,
+              vendedor: v.usuarios?.nombre || 'Sin asignar'
+            }))
+          )
+        }
+      } catch (err) {
+        console.error('Error cargando ventas de hoy en layout:', err)
+      } finally {
+        setLoadingSales(false)
+      }
+    }
+
+    fetchTodaySales()
+  }, [selectedBranchId, activeMenu])
 
   const renderContent = () => {
     switch (activeMenu) {
@@ -25,13 +98,30 @@ export default function DashboardLayout() {
         return <InventoryView branchId={selectedBranchId} />
       case 'configuracion':
         return <SettingsView />
+      case 'productos':
+        return <ProductsView />
       case 'dashboard':
       default:
         return (
           <>
             <SalesCards branchId={selectedBranchId} />
             <div className="mt-6 md:mt-8">
-              <SalesTable branchId={selectedBranchId} />
+              {/* TÍTULO VISUAL EXCLUSIVO PARA EL DASHBOARD */}
+              <div className="rounded-sm border border-gray-200 bg-white">
+                <div className="border-b border-gray-200 px-6 py-4">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-gray-900">
+                    Últimas Ventas de Hoy
+                  </h2>
+                </div>
+                {loadingSales ? (
+                  <div className="px-6 py-8 text-center text-sm text-gray-500">
+                    Cargando transacciones de hoy...
+                  </div>
+                ) : (
+                  /* ENVIAMOS LAS VENTAS DE HOY CARGADAS A NUESTRA TABLA PURA */
+                  <SalesTable sales={todaySales} />
+                )}
+              </div>
             </div>
           </>
         )
@@ -40,15 +130,16 @@ export default function DashboardLayout() {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar
-        isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
-        activeMenu={activeMenu}
-        onMenuSelect={(menu) => {
-          setActiveMenu(menu)
-          setSidebarOpen(false)
-        }}
-      />
+        <Sidebar
+          isOpen={sidebarOpen}
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
+          activeMenu={activeMenu}
+          onMenuSelect={(menu) => {
+            setActiveMenu(menu)
+            setSidebarOpen(false)
+          }}
+          rol={rol}
+        />
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header

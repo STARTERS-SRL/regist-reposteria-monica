@@ -11,6 +11,7 @@ interface VentaProcesada {
   method: string
   date: string
   estado: 'activa' | 'anulada'
+  vendedor: string
 }
 
 export default function SalesView() {
@@ -52,7 +53,9 @@ export default function SalesView() {
           metodo_pago,
           fecha,
           estado,
-          sucursales ( nombre )
+          usuario_id,
+          sucursales ( nombre ),
+          usuarios ( nombre )
         `)
         .order('fecha', { ascending: false })
 
@@ -67,16 +70,16 @@ export default function SalesView() {
         if (selectedMonth) {
           if (selectedDay) {
             const diaFormateado = selectedDay.padStart(2, '0')
-            inicioStr = `${selectedYear}-${selectedMonth}-${diaFormateado}T00:00:00.000Z`
-            finStr = `${selectedYear}-${selectedMonth}-${diaFormateado}T23:59:59.999Z`
+            inicioStr = `${selectedYear}-${selectedMonth}-${diaFormateado}T00:00:00.000`
+            finStr = `${selectedYear}-${selectedMonth}-${diaFormateado}T23:59:59.999`
           } else {
-            inicioStr = `${selectedYear}-${selectedMonth}-01T00:00:00.000Z`
+            inicioStr = `${selectedYear}-${selectedMonth}-01T00:00:00.000`
             const ultimoDia = new Date(parseInt(selectedYear), parseInt(selectedMonth), 0).getDate()
-            finStr = `${selectedYear}-${selectedMonth}-${ultimoDia}T23:59:59.999Z`
+            finStr = `${selectedYear}-${selectedMonth}-${String(ultimoDia).padStart(2, '0')}T23:59:59.999`
           }
         } else {
-          inicioStr = `${selectedYear}-01-01T00:00:00.000Z`
-          finStr = `${selectedYear}-12-31T23:59:59.999Z`
+          inicioStr = `${selectedYear}-01-01T00:00:00.000`
+          finStr = `${selectedYear}-12-31T23:59:59.999`
         }
 
         query = query.gte('fecha', inicioStr).lte('fecha', finStr)
@@ -95,7 +98,8 @@ export default function SalesView() {
             year: 'numeric', month: '2-digit', day: '2-digit',
             hour: '2-digit', minute: '2-digit'
           }),
-          estado: v.estado
+          estado: v.estado,
+          vendedor: v.usuarios?.nombre || 'Sin asignar'
         }))
         setSales(mappedSales)
       }
@@ -114,13 +118,10 @@ export default function SalesView() {
     .filter(s => s.estado === 'activa')
     .reduce((acc, curr) => acc + Number(curr.total), 0)
 
-  // Determinar si hay un filtro de fecha específico seleccionado por el usuario
-  const hasActiveFilter = selectedMonth !== '' || selectedDay !== ''
-
   const getListTitle = () => {
-    if (selectedDay && selectedMonth) return `Ventas Registradas del Día ${selectedDay}/${selectedMonth}/${selectedYear}`
-    if (selectedMonth) return `Ventas Registradas de ${months.find(m => m.value === selectedMonth)?.label} ${selectedYear}`
-    return `Ventas Registradas del Año ${selectedYear}`
+    if (selectedDay && selectedMonth) return `Historial Completo: Ventas del Día ${selectedDay}/${selectedMonth}/${selectedYear}`
+    if (selectedMonth) return `Historial Completo: Ventas de ${months.find(m => m.value === selectedMonth)?.label} ${selectedYear}`
+    return `Historial Completo: Registro Anual de Ventas ${selectedYear}`
   }
 
   return (
@@ -202,28 +203,21 @@ export default function SalesView() {
         </span>
       </div>
 
-      {/* RENDERIZADO CONDICIONAL DE LA TABLA */}
+      {/* REGISTRO DE VENTAS GENERAL CORREGIDO (Removido el contenedor estático de 'Ventas de Hoy') */}
       {loading ? (
         <div className="bg-white border border-gray-200 rounded-sm p-8 text-center text-sm text-gray-400">
           Buscando registros en Supabase...
         </div>
-      ) : !hasActiveFilter ? (
-        /* Si Doña Mónica entra por primera vez y no ha tocado un mes o día, le pide que elija */
-        <div className="bg-white border border-gray-200 rounded-sm p-8 text-center text-sm text-gray-500 font-medium">
-          Selecciona un mes o un día específico arriba para desplegar el historial de transacciones.
-        </div>
       ) : sales.length > 0 ? (
-        /* SI EXISTEN VENTAS EN LA FECHA SELECCIONADA: Se muestra la tabla de forma impecable */
         <div className="bg-white border border-gray-200 rounded-sm p-4">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-sm font-semibold text-gray-900">{getListTitle()}</h3>
+          <div className="border-b border-gray-100 pb-3 mb-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-800">{getListTitle()}</h3>
           </div>
           <SalesTable sales={sales} />
         </div>
       ) : (
-        /* SI NO HUBO VENTAS: La tabla desaparece por completo y muestra un aviso limpio */
         <div className="bg-white border border-gray-200 rounded-sm p-8 text-center text-sm text-gray-400 border-dashed">
-          No se registraron ventas en la fecha seleccionada.
+          No se registraron transacciones para los filtros aplicados.
         </div>
       )}
     </div>

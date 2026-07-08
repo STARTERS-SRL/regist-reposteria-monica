@@ -4,29 +4,9 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase-client'
 
 export default function SettingsView() {
-  const [settings, setSettings] = useState({
-    businessName: 'Reposterías ABC',
-    email: 'admin@reposterias.com',
-    phone: '+591 3 1234567',
-    timezone: 'America/La_Paz',
-    currency: 'BOB'
-  })
-
-  const [editMode, setEditMode] = useState(false)
-  const [saved, setSaved] = useState(false)
-
-  const handleChange = (field: string, value: string) => {
-    setSettings(prev => ({
-      ...prev,
-      [field]: value
-    }))
-  }
-
-  const handleSave = async () => {
-    setSaved(true)
-    setEditMode(false)
-    setTimeout(() => setSaved(false), 3000)
-  }
+  // PIN de administrador
+  const [pinAdmin, setPinAdmin] = useState('')
+  const [adminMensaje, setAdminMensaje] = useState('')
 
   // Empleadas
   const [empleadas, setEmpleadas] = useState<any[]>([])
@@ -35,6 +15,13 @@ export default function SettingsView() {
   const [pinEmpleada, setPinEmpleada] = useState('')
   const [sucursalId, setSucursalId] = useState('')
   const [mensaje, setMensaje] = useState('')
+
+  // Estado para la edición de empleadas en línea
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editNombre, setEditNombre] = useState('')
+  const [editPin, setEditPin] = useState('')
+  const [editSucursalId, setEditSucursalId] = useState('')
+  const [editActivo, setEditActivo] = useState(true)
 
   useEffect(() => {
     fetchEmpleadas()
@@ -53,6 +40,29 @@ export default function SettingsView() {
   const fetchSucursales = async () => {
     const { data } = await supabase.from('sucursales').select('*').order('nombre')
     if (data) setSucursales(data)
+  }
+
+  const actualizarPinAdmin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAdminMensaje('')
+
+    if (pinAdmin.length !== 4) {
+      setAdminMensaje('Error: El PIN debe tener 4 dígitos')
+      return
+    }
+
+    const { error } = await supabase
+      .from('usuarios')
+      .update({ pin: pinAdmin })
+      .eq('rol', 'admin') // Actualiza al rol administrador
+
+    if (error) {
+      setAdminMensaje('Error al cambiar el PIN del Administrador')
+    } else {
+      setAdminMensaje('PIN de Administrador actualizado con éxito')
+      setPinAdmin('')
+    }
+    setTimeout(() => setAdminMensaje(''), 3000)
   }
 
   const crearEmpleada = async (e: React.FormEvent) => {
@@ -85,176 +95,84 @@ export default function SettingsView() {
     setTimeout(() => setMensaje(''), 3000)
   }
 
+  const iniciarEdicion = (emp: any) => {
+    setEditingId(emp.id)
+    setEditNombre(emp.nombre)
+    setEditPin(emp.pin)
+    setEditSucursalId(String(emp.sucursal_id || ''))
+    setEditActivo(emp.activo)
+  }
+
+  const guardarCambiosEmpleada = async (id: number) => {
+    if (editPin.length !== 4) {
+      alert('El PIN debe tener exactamente 4 dígitos')
+      return
+    }
+
+    const { error } = await supabase
+      .from('usuarios')
+      .update({
+        nombre: editNombre,
+        pin: editPin,
+        sucursal_id: Number(editSucursalId),
+        activo: editActivo
+      })
+      .eq('id', id)
+
+    if (error) {
+      alert('Error al actualizar la empleada')
+    } else {
+      setEditingId(null)
+      fetchEmpleadas()
+    }
+  }
+
   return (
-    <div className="max-w-2xl space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Configuración</h2>
-        <button
-          onClick={() => setEditMode(!editMode)}
-          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-        >
-          {editMode ? 'Cancelar' : 'Editar'}
-        </button>
+    <div className="max-w-3xl space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Configuración del Sistema</h2>
       </div>
 
-      {/* Success Message */}
-      {saved && (
-        <div className="rounded bg-green-50 border border-green-200 p-4">
-          <p className="text-sm font-medium text-green-800">Cambios guardados exitosamente</p>
-        </div>
-      )}
-
-      {/* Business Information */}
+      {/* SEGURIDAD: Cambiar PIN del Administrador */}
       <div className="bg-white rounded border border-gray-200 p-6">
-        <h3 className="mb-6 text-lg font-semibold text-gray-900">Información del Negocio</h3>
-        
-        <div className="space-y-4">
-          {/* Business Name */}
+        <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-gray-700">Seguridad - PIN Administrador</h3>
+        <form onSubmit={actualizarPinAdmin} className="max-w-sm space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nombre del Negocio
-            </label>
-            {editMode ? (
-              <input
-                type="text"
-                value={settings.businessName}
-                onChange={(e) => handleChange('businessName', e.target.value)}
-                className="w-full rounded border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            ) : (
-              <p className="text-gray-700">{settings.businessName}</p>
-            )}
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nuevo PIN de Acceso (4 dígitos)</label>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={pinAdmin}
+              onChange={(e) => setPinAdmin(e.target.value)}
+              className="w-full rounded border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
           </div>
-
-          {/* Email */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Correo Electrónico
-            </label>
-            {editMode ? (
-              <input
-                type="email"
-                value={settings.email}
-                onChange={(e) => handleChange('email', e.target.value)}
-                className="w-full rounded border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            ) : (
-              <p className="text-gray-700">{settings.email}</p>
-            )}
-          </div>
-
-          {/* Phone */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Teléfono
-            </label>
-            {editMode ? (
-              <input
-                type="tel"
-                value={settings.phone}
-                onChange={(e) => handleChange('phone', e.target.value)}
-                className="w-full rounded border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            ) : (
-              <p className="text-gray-700">{settings.phone}</p>
-            )}
-          </div>
-
-          {/* Timezone */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Zona Horaria
-            </label>
-            {editMode ? (
-              <select
-                value={settings.timezone}
-                onChange={(e) => handleChange('timezone', e.target.value)}
-                className="w-full rounded border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="America/La_Paz">Bolivia (La Paz)</option>
-                <option value="America/Caracas">Venezuela</option>
-                <option value="America/Argentina/Buenos_Aires">Argentina</option>
-                <option value="America/Lima">Perú</option>
-              </select>
-            ) : (
-              <p className="text-gray-700">{settings.timezone}</p>
-            )}
-          </div>
-
-          {/* Currency */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Moneda
-            </label>
-            {editMode ? (
-              <select
-                value={settings.currency}
-                onChange={(e) => handleChange('currency', e.target.value)}
-                className="w-full rounded border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="BOB">Bolivianos (Bs.)</option>
-                <option value="USD">Dólares (USD)</option>
-                <option value="EUR">Euros (EUR)</option>
-              </select>
-            ) : (
-              <p className="text-gray-700">{settings.currency}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Save Button */}
-        {editMode && (
-          <div className="mt-6 flex justify-end">
-            <button
-              onClick={handleSave}
-              className="rounded bg-green-600 px-6 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700"
-            >
-              Guardar Cambios
-            </button>
-          </div>
-        )}
+          {adminMensaje && (
+            <p className={`text-sm font-medium ${adminMensaje.includes('Error') ? 'text-red-600' : 'text-green-700'}`}>
+              {adminMensaje}
+            </p>
+          )}
+          <button
+            type="submit"
+            className="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+          >
+            Actualizar PIN Maestro
+          </button>
+        </form>
       </div>
 
-      {/* Additional Settings */}
+      {/* Gestión de Empleadas */}
       <div className="bg-white rounded border border-gray-200 p-6">
-        <h3 className="mb-4 text-lg font-semibold text-gray-900">Otras Configuraciones</h3>
-        
-        <div className="space-y-4">
-          <div className="flex items-center justify-between pb-4 border-b border-gray-200">
-            <div>
-              <p className="font-medium text-gray-900">Notificaciones por Email</p>
-              <p className="text-sm text-gray-600">Recibir alertas de stock bajo</p>
-            </div>
-            <input type="checkbox" defaultChecked className="w-4 h-4" />
-          </div>
+        <h3 className="mb-6 text-sm font-bold uppercase tracking-wider text-gray-700">Gestión de Empleadas</h3>
 
-          <div className="flex items-center justify-between pb-4 border-b border-gray-200">
-            <div>
-              <p className="font-medium text-gray-900">Respaldos Automáticos</p>
-              <p className="text-sm text-gray-600">Realizar copias de seguridad diarias</p>
-            </div>
-            <input type="checkbox" defaultChecked className="w-4 h-4" />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-gray-900">Modo Oscuro</p>
-              <p className="text-sm text-gray-600">Cambiar a tema oscuro</p>
-            </div>
-            <input type="checkbox" className="w-4 h-4" />
-          </div>
-        </div>
-      </div>
-
-      {/* Gestion de Empleadas */}
-      <div className="bg-white rounded border border-gray-200 p-6">
-        <h3 className="mb-6 text-lg font-semibold text-gray-900">Gestion de Empleadas</h3>
-
-        <form onSubmit={crearEmpleada} className="mb-6 space-y-4">
+        {/* Formulario de registro */}
+        <form onSubmit={crearEmpleada} className="mb-8 space-y-4 border-b border-gray-100 pb-6">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Registrar Nueva Empleada</h4>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Completo</label>
               <input
                 type="text"
                 value={nombre}
@@ -264,7 +182,7 @@ export default function SettingsView() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">PIN (4 digitos)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">PIN de Caja (4 dígitos)</label>
               <input
                 type="password"
                 inputMode="numeric"
@@ -276,7 +194,7 @@ export default function SettingsView() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sucursal</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sucursal Asignada</label>
               <select
                 value={sucursalId}
                 onChange={(e) => setSucursalId(e.target.value)}
@@ -303,43 +221,126 @@ export default function SettingsView() {
           </button>
         </form>
 
-        <h4 className="mb-3 text-sm font-semibold text-gray-900">Empleadas registradas</h4>
+        {/* Tabla con Edición Modificable */}
+        <h4 className="mb-3 text-sm font-semibold text-gray-900">Personal Registrado</h4>
         <div className="overflow-x-auto rounded border border-gray-200">
-          <table className="w-full">
+          <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Nombre</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Sucursal</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">PIN</th>
+                <th className="px-4 py-3 text-sm font-semibold text-gray-900">Nombre</th>
+                <th className="px-4 py-3 text-sm font-semibold text-gray-900">Sucursal</th>
+                <th className="px-4 py-3 text-sm font-semibold text-gray-900">PIN</th>
                 <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Estado</th>
+                <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Acciones</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-gray-100 text-sm">
               {empleadas.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
                     No hay empleadas registradas
                   </td>
                 </tr>
               ) : (
-                empleadas.map((emp) => (
-                  <tr key={emp.id} className="border-b border-gray-200 hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{emp.nombre}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">
-                      {(emp as any).sucursales?.nombre || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{emp.pin}</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center rounded px-2.5 py-0.5 text-xs font-semibold ${
-                        emp.activo
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {emp.activo ? 'Activo' : 'Inactivo'}
-                      </span>
-                    </td>
-                  </tr>
-                ))
+                empleadas.map((emp) => {
+                  const isEditing = editingId === emp.id
+
+                  return (
+                    <tr key={emp.id} className="hover:bg-gray-50/50 ready-transition">
+                      {/* NOMBRE */}
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editNombre}
+                            onChange={(e) => setEditNombre(e.target.value)}
+                            className="rounded border border-gray-300 px-2 py-1 text-gray-900 focus:outline-none focus:border-blue-500 w-full"
+                          />
+                        ) : (
+                          <span className="font-medium text-gray-900">{emp.nombre}</span>
+                        )}
+                      </td>
+
+                      {/* SUCURSAL */}
+                      <td className="px-4 py-3 text-gray-700">
+                        {isEditing ? (
+                          <select
+                            value={editSucursalId}
+                            onChange={(e) => setEditSucursalId(e.target.value)}
+                            className="rounded border border-gray-300 px-2 py-1 text-gray-900 focus:outline-none focus:border-blue-500 w-full"
+                          >
+                            {sucursales.map((s) => (
+                              <option key={s.id} value={s.id}>{s.nombre}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          emp.sucursales?.nombre || '-'
+                        )}
+                      </td>
+
+                      {/* PIN */}
+                      <td className="px-4 py-3 text-gray-700">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            maxLength={4}
+                            value={editPin}
+                            onChange={(e) => setEditPin(e.target.value)}
+                            className="rounded border border-gray-300 px-2 py-1 text-gray-900 focus:outline-none focus:border-blue-500 w-20 text-center"
+                          />
+                        ) : (
+                          <span className="font-mono">{emp.pin}</span>
+                        )}
+                      </td>
+
+                      {/* ESTADO */}
+                      <td className="px-4 py-3 text-center">
+                        {isEditing ? (
+                          <select
+                            value={editActivo ? 'true' : 'false'}
+                            onChange={(e) => setEditActivo(e.target.value === 'true')}
+                            className="rounded border border-gray-300 px-2 py-1 text-sm bg-white text-gray-900 focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="true">Activo</option>
+                            <option value="false">Inactivo</option>
+                          </select>
+                        ) : (
+                          <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold ${emp.activo ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'
+                            }`}>
+                            {emp.activo ? 'Activo' : 'Inactivo'}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* BOTONES DE ACCIÓN */}
+                      <td className="px-4 py-3 text-center space-x-2">
+                        {isEditing ? (
+                          <>
+                            <button
+                              onClick={() => guardarCambiosEmpleada(emp.id)}
+                              className="text-xs bg-green-600 text-white font-medium px-2 py-1 rounded hover:bg-green-700 transition-colors"
+                            >
+                              Guardar
+                            </button>
+                            <button
+                              onClick={() => setEditingId(null)}
+                              className="text-xs bg-gray-200 text-gray-700 font-medium px-2 py-1 rounded hover:bg-gray-300 transition-colors"
+                            >
+                              Cancelar
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => iniciarEdicion(emp)}
+                            className="text-xs text-blue-600 font-semibold hover:text-blue-800 transition-colors"
+                          >
+                            Modificar
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
