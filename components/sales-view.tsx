@@ -12,6 +12,8 @@ interface VentaProcesada {
   date: string
   estado: 'activa' | 'anulada'
   vendedor: string
+  montoEfectivo?: number
+  montoQr?: number
 }
 
 export default function SalesView() {
@@ -51,6 +53,8 @@ export default function SalesView() {
           id,
           total,
           metodo_pago,
+          monto_efectivo,
+          monto_qr,
           fecha,
           estado,
           usuario_id,
@@ -99,7 +103,9 @@ export default function SalesView() {
             hour: '2-digit', minute: '2-digit'
           }),
           estado: v.estado,
-          vendedor: v.usuarios?.nombre || 'Sin asignar'
+          vendedor: v.usuarios?.nombre || 'Sin asignar',
+          montoEfectivo: Number(v.monto_efectivo) || 0,
+          montoQr: Number(v.monto_qr) || 0
         }))
         setSales(mappedSales)
       }

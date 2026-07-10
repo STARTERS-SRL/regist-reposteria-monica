@@ -8,6 +8,8 @@ interface Sale {
   date: string
   estado: 'activa' | 'anulada'
   vendedor: string
+  montoEfectivo?: number
+  montoQr?: number
 }
 
 interface Props {
@@ -46,12 +48,20 @@ export default function SalesTable({ sales = [] }: Props) { // Asignamos un arre
                   Bs. {Number(sale.total).toLocaleString('es-BO')}
                 </td>
                 <td className="px-6 py-4">
-                  <span className={`inline-block rounded-sm px-2 py-0.5 text-xs font-bold uppercase ${sale.method.toUpperCase() === 'EFECTIVO'
-                      ? 'bg-green-50 text-green-700 border border-green-100'
-                      : 'bg-blue-50 text-blue-700 border border-blue-100'
-                    }`}>
-                    {sale.method}
-                  </span>
+                  {sale.method.toUpperCase() === 'MIXTO' ? (
+                    <div className="text-xs space-y-0.5">
+                      <span className="inline-block rounded-sm px-2 py-0.5 font-bold uppercase bg-gray-50 text-gray-700 border border-gray-200">Mixto</span>
+                      <div className="text-gray-500 pt-0.5">E: Bs. {(sale.montoEfectivo ?? 0).toFixed(2)}</div>
+                      <div className="text-gray-500">QR: Bs. {(sale.montoQr ?? 0).toFixed(2)}</div>
+                    </div>
+                  ) : (
+                    <span className={`inline-block rounded-sm px-2 py-0.5 text-xs font-bold uppercase ${sale.method.toUpperCase() === 'EFECTIVO'
+                        ? 'bg-green-50 text-green-700 border border-green-100'
+                        : 'bg-blue-50 text-blue-700 border border-blue-100'
+                      }`}>
+                      {sale.method}
+                    </span>
+                  )}
                 </td>
                 <td className="px-6 py-4 text-gray-600">{sale.date}</td>
               </tr>

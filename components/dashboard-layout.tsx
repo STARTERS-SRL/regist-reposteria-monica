@@ -20,6 +20,8 @@ interface Sale {
   date: string
   estado: 'activa' | 'anulada'
   vendedor: string
+  montoEfectivo?: number
+  montoQr?: number
 }
 
 export default function DashboardLayout() {
@@ -52,7 +54,7 @@ export default function DashboardLayout() {
 
         let query = supabase
           .from('ventas')
-          .select('id, total, metodo_pago, fecha, estado, sucursales(nombre), usuario_id, usuarios(nombre)')
+          .select('id, total, metodo_pago, monto_efectivo, monto_qr, fecha, estado, sucursales(nombre), usuario_id, usuarios(nombre)')
           .gte('fecha', startOfToday.toISOString())
           .order('fecha', { ascending: false })
 
@@ -69,12 +71,14 @@ export default function DashboardLayout() {
               id: String(v.id),
               branch: v.sucursales?.nombre || '-',
               total: String(v.total),
-              method: v.metodo_pago === 'efectivo' ? 'Efectivo' : 'QR',
+              method: v.metodo_pago === 'efectivo' ? 'Efectivo' : v.metodo_pago === 'mixto' ? 'Mixto' : 'QR',
               date: new Date(v.fecha).toLocaleDateString('es-BO', {
                 hour: '2-digit', minute: '2-digit'
               }),
               estado: v.estado,
-              vendedor: v.usuarios?.nombre || 'Sin asignar'
+              vendedor: v.usuarios?.nombre || 'Sin asignar',
+              montoEfectivo: Number(v.monto_efectivo) || 0,
+              montoQr: Number(v.monto_qr) || 0
             }))
           )
         }

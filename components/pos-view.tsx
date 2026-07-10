@@ -32,6 +32,8 @@ interface VentaLocal {
   metodo_pago: string
   estado: string
   vendedor: string
+  monto_efectivo?: number
+  monto_qr?: number
 }
 
 interface JornadaActual {
@@ -57,7 +59,9 @@ export default function PosView() {
   const [sucursalId, setSucursalId] = useState<number | null>(null)
   const [jornadaActual, setJornadaActual] = useState<JornadaActual>(jornadaInicial)
   const [carrito, setCarrito] = useState<CarritoItem[]>([])
-  const [metodoPago, setMetodoPago] = useState<'efectivo' | 'qr'>('efectivo')
+  const [metodoPago, setMetodoPago] = useState<'efectivo' | 'qr' | 'mixto'>('efectivo')
+  const [montoEfectivoMixto, setMontoEfectivoMixto] = useState<string>('')
+  const [montoQrMixto, setMontoQrMixto] = useState<string>('')
   const [mensaje, setMensaje] = useState('')
   const [cargando, setCargando] = useState(false)
   const [pestañaActiva, setPestañaActiva] = useState<SubPestañaPos>('punto_venta')
@@ -100,6 +104,8 @@ export default function PosView() {
     setJornadaActual(jornadaInicial)
     setCarrito([])
     setMetodoPago('efectivo')
+    setMontoEfectivoMixto('')
+    setMontoQrMixto('')
     setMensaje('')
     setPestañaActiva('punto_venta')
     setVentasDeHoy([])
@@ -127,7 +133,7 @@ export default function PosView() {
 
     const { data } = await supabase
       .from('ventas')
-      .select('id, fecha, total, metodo_pago, estado, usuario_id, usuarios(nombre)')
+      .select('id, fecha, total, metodo_pago, monto_efectivo, monto_qr, estado, usuario_id, usuarios(nombre)')
       .eq('sucursal_id', sucursalId)
       .gte('fecha', startOfToday)
       .order('fecha', { ascending: false })
@@ -137,9 +143,11 @@ export default function PosView() {
         id: String(v.id),
         fecha: new Date(v.fecha).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }),
         total: Number(v.total),
-        metodo_pago: v.metodo_pago === 'efectivo' ? 'Efectivo' : 'QR',
+        metodo_pago: v.metodo_pago === 'efectivo' ? 'Efectivo' : v.metodo_pago === 'mixto' ? 'Mixto' : 'QR',
         estado: v.estado,
         vendedor: (v as any).usuarios?.nombre || 'Sin asignar',
+        monto_efectivo: Number((v as any).monto_efectivo) || 0,
+        monto_qr: Number((v as any).monto_qr) || 0,
       })))
     }
   }
@@ -419,6 +427,24 @@ export default function PosView() {
       }
     }
 
+    if (metodoPago === 'mixto') {
+      const ef = parseFloat(montoEfectivoMixto)
+      const qr = parseFloat(montoQrMixto)
+      if (isNaN(ef) || isNaN(qr) || ef <= 0 || qr <= 0) {
+        setMensaje('Ambos montos deben ser mayores a cero')
+        setCargando(false)
+        return
+      }
+      if (ef + qr !== total) {
+        setMensaje('La suma de efectivo y QR debe ser igual al total')
+        setCargando(false)
+        return
+      }
+    }
+
+    const montoEf = metodoPago === 'efectivo' ? total : metodoPago === 'mixto' ? parseFloat(montoEfectivoMixto) : 0
+    const montoQ = metodoPago === 'qr' ? total : metodoPago === 'mixto' ? parseFloat(montoQrMixto) : 0
+
     const { data: venta, error: errorVenta } = await supabase
       .from('ventas')
       .insert({
@@ -427,6 +453,8 @@ export default function PosView() {
         total,
         estado: 'activa',
         metodo_pago: metodoPago,
+        monto_efectivo: montoEf,
+        monto_qr: montoQ,
         fecha: new Date().toISOString(),
       })
       .select().single()
@@ -471,6 +499,9 @@ export default function PosView() {
     setMensaje('Venta realizada')
     await cargarEstadoJornada()
     setCarrito([])
+    setMontoEfectivoMixto('')
+    setMontoQrMixto('')
+    setMetodoPago('efectivo')
     await fetchVentasLocalesHoy()
     setCargando(false)
     setTimeout(() => setMensaje(''), 3000)
@@ -747,7 +778,17 @@ export default function PosView() {
                   <td className="px-4 py-3 font-mono text-xs text-gray-400">#{v.id}</td>
                   <td className="px-4 py-3 text-gray-600">{v.fecha}</td>
                   <td className="px-4 py-3 text-gray-600">{v.vendedor}</td>
-                  <td className="px-4 py-3 font-medium text-gray-700">{v.metodo_pago}</td>
+                  <td className="px-4 py-3">
+                    {v.metodo_pago === 'Mixto' ? (
+                      <div className="text-xs space-y-0.5">
+                        <span className="font-semibold text-gray-700">Mixto</span>
+                        <div className="text-gray-500">E: Bs. {(v.monto_efectivo ?? 0).toFixed(2)}</div>
+                        <div className="text-gray-500">QR: Bs. {(v.monto_qr ?? 0).toFixed(2)}</div>
+                      </div>
+                    ) : (
+                      <span className="font-medium text-gray-700">{v.metodo_pago}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right font-bold text-gray-900">Bs. {v.total.toFixed(2)}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm font-bold ${v.estado === 'activa' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
@@ -825,9 +866,50 @@ export default function PosView() {
           <div className="space-y-2 pt-2 border-t border-gray-100">
             <label className="block text-[11px] font-bold uppercase text-gray-400">Modalidad de Pago</label>
             <div className="flex gap-2">
-              <button onClick={() => setMetodoPago('efectivo')} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'efectivo' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>Efectivo</button>
-              <button onClick={() => setMetodoPago('qr')} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'qr' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>QR</button>
+              <button onClick={() => { setMetodoPago('efectivo'); setMontoEfectivoMixto(''); setMontoQrMixto(''); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'efectivo' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>Efectivo</button>
+              <button onClick={() => { setMetodoPago('qr'); setMontoEfectivoMixto(''); setMontoQrMixto(''); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'qr' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>QR</button>
+              <button onClick={() => { setMetodoPago('mixto'); setMontoEfectivoMixto(String(total)); setMontoQrMixto('0'); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'mixto' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>Mixto</button>
             </div>
+            {metodoPago === 'mixto' && (
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-600 w-16">Efectivo:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={montoEfectivoMixto}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setMontoEfectivoMixto(val)
+                      const num = parseFloat(val)
+                      if (!isNaN(num) && num >= 0) {
+                        setMontoQrMixto(Math.max(0, total - num).toFixed(2))
+                      }
+                    }}
+                    className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-gray-500"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-600 w-16">QR:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={montoQrMixto}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setMontoQrMixto(val)
+                      const num = parseFloat(val)
+                      if (!isNaN(num) && num >= 0) {
+                        setMontoEfectivoMixto(Math.max(0, total - num).toFixed(2))
+                      }
+                    }}
+                    className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-gray-500"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <button onClick={registrarVenta} disabled={carrito.length === 0 || cargando} className="w-full rounded-sm bg-blue-600 h-10 text-xs font-semibold uppercase tracking-wider text-white hover:bg-blue-700 disabled:opacity-50">
