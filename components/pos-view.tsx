@@ -7,6 +7,7 @@ interface Producto {
   id: number
   nombre: string
   precio: number
+  tipo?: string
 }
 
 interface Sucursal {
@@ -812,29 +813,56 @@ export default function PosView() {
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         <div className="md:col-span-1 lg:col-span-2 space-y-3">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Catálogo de Repostería</h3>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {productos.map((producto) => {
-              const disponible = calcularStockDisponible(producto.id)
+          {(() => {
+            const ordenar = (prods: Producto[]) =>
+              [...prods].sort((a, b) => {
+                const dispA = calcularStockDisponible(a.id) > 0 ? 0 : 1
+                const dispB = calcularStockDisponible(b.id) > 0 ? 0 : 1
+                if (dispA !== dispB) return dispA - dispB
+                return a.nombre.localeCompare(b.nombre)
+              })
 
-              return (
-                <button
-                  key={producto.id}
-                  onClick={() => agregarAlCarrito(producto)}
-                  disabled={disponible <= 0}
-                  className="rounded-sm border border-gray-200 bg-white p-4 text-left transition-all hover:border-gray-400 disabled:opacity-40"
-                >
-                  <p className="font-semibold text-sm text-gray-900">{producto.nombre}</p>
-                  <div className="flex justify-between items-center mt-2">
-                    <span className="text-xs font-bold text-gray-600">Bs. {producto.precio}</span>
-                    <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-sm ${disponible > 0 ? 'bg-green-50 text-green-700' : 'bg-red-100 text-red-900 font-bold'}`}>
-                      {disponible > 0 ? `Stock: ${disponible}` : 'Agotado'}
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
+            const porciones = ordenar(productos.filter(p => (p as any).tipo === 'Porción'))
+            const enteros = ordenar(productos.filter(p => (p as any).tipo === 'Entero'))
+
+            const renderSeccion = (titulo: string, emoji: string, items: Producto[]) => (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 py-1">
+                  <span className="text-xs">{emoji}</span>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">{titulo}</h3>
+                  <div className="flex-1 border-t border-gray-200" />
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {items.map((producto) => {
+                    const disponible = calcularStockDisponible(producto.id)
+                    return (
+                      <button
+                        key={producto.id}
+                        onClick={() => agregarAlCarrito(producto)}
+                        disabled={disponible <= 0}
+                        className="rounded-sm border border-gray-200 bg-white p-3 text-left transition-all hover:border-gray-400 disabled:opacity-40"
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <p className="font-semibold text-sm text-gray-900 leading-tight">{producto.nombre}</p>
+                          <span className={`whitespace-nowrap text-[11px] font-medium px-1.5 py-0.5 rounded-sm shrink-0 ${disponible > 0 ? 'bg-green-50 text-green-700' : 'bg-red-100 text-red-900 font-bold'}`}>
+                            {disponible > 0 ? `Stock: ${disponible}` : 'Agotado'}
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold text-gray-600">Bs. {producto.precio}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+
+            return (
+              <>
+                {porciones.length > 0 && renderSeccion('PORCIONES', '🍰', porciones)}
+                {enteros.length > 0 && renderSeccion('ENTEROS', '📦', enteros)}
+              </>
+            )
+          })()}
         </div>
 
         <div className="rounded-sm border border-gray-200 bg-white p-4 space-y-4 h-fit">
