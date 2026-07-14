@@ -16,6 +16,7 @@ export default function Sidebar({ isOpen, onToggle, activeMenu, onMenuSelect, ro
     { label: 'Punto de Venta', value: 'pos' },
     { label: 'Ventas', value: 'ventas' },
     { label: 'Inventario', value: 'inventario' },
+    { label: 'Despachos', value: 'despachos' },
     ...(rol === 'admin' ? [{ label: 'Productos', value: 'productos' }] : []),
     { label: 'Configuración', value: 'configuracion' },
   ]

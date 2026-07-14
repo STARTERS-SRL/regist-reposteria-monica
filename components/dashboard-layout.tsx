@@ -11,6 +11,7 @@ import InventoryView from './inventory-view'
 import SettingsView from './settings-view'
 import PosView from './pos-view'
 import ProductsView from './products-view'
+import DespachosView from './despachos-view'
 import { mapearVenta, VentaEnriquecida } from '@/lib/ventas-utils'
 
 export default function DashboardLayout() {
@@ -92,6 +93,8 @@ export default function DashboardLayout() {
         return <SettingsView />
       case 'productos':
         return <ProductsView />
+      case 'despachos':
+        return <DespachosView />
       case 'dashboard':
       default:
         return (
