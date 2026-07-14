@@ -50,6 +50,9 @@ export default function InventoryView({ branchId }: Props) {
   const [newMinimo, setNewMinimo] = useState('2')
 
   // NUEVOS ESTADOS: Para controlar la edición en línea de la fila elegida
+  // Buscador en tiempo real
+  const [searchTerm, setSearchTerm] = useState('')
+
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editProductoId, setEditProductoId] = useState('')
   const [editSucursalId, setEditSucursalId] = useState('')
@@ -74,7 +77,7 @@ export default function InventoryView({ branchId }: Props) {
     const { data: prods } = await supabase.from('productos').select('id, nombre, precio').eq('activo', true)
     const { data: sucs } = await supabase.from('sucursales').select('id, nombre')
     if (prods) setProductos(prods)
-    if (sucs) setSucursales(sucs)
+    if (sucs) setSucursales(sucs.filter((s: any) => s.activo !== false))
   }
 
   const fetchInventory = async () => {
@@ -204,6 +207,13 @@ export default function InventoryView({ branchId }: Props) {
     }
   }
 
+  // Filtro en tiempo real sobre los datos ya cargados
+  const filteredInventory = searchTerm
+    ? inventory.filter(item =>
+        item.productos?.nombre?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    : inventory
+
   return (
     <div className="rounded border border-gray-200 bg-white">
       <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
@@ -226,6 +236,17 @@ export default function InventoryView({ branchId }: Props) {
             Sincronizar
           </button>
         </div>
+      </div>
+
+      {/* Buscador en tiempo real */}
+      <div className="border-b border-gray-100 px-6 py-3">
+        <input
+          type="text"
+          placeholder="Buscar producto…"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full max-w-xs rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-500"
+        />
       </div>
 
       <div className="overflow-x-auto">
@@ -330,12 +351,14 @@ export default function InventoryView({ branchId }: Props) {
               <tr>
                 <td colSpan={7} className="px-6 py-8 text-center text-gray-500">Analizando vitrinas en tiempo real...</td>
               </tr>
-            ) : inventory.length === 0 ? (
+            ) : filteredInventory.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-6 py-8 text-center text-gray-500 italic">No hay productos vinculados.</td>
+                <td colSpan={7} className="px-6 py-8 text-center text-gray-500 italic">
+                  {searchTerm ? `No se encontraron resultados para "${searchTerm}".` : 'No hay productos vinculados.'}
+                </td>
               </tr>
             ) : (
-              inventory.map((item) => {
+              filteredInventory.map((item) => {
                 const ahora = new Date()
                 const fechaIngreso = new Date(item.fecha_ingreso)
                 const diasEnEstante = Math.floor((ahora.getTime() - fechaIngreso.getTime()) / (1000 * 60 * 60 * 24))

@@ -16,6 +16,11 @@ export default function SettingsView() {
   const [sucursalId, setSucursalId] = useState('')
   const [mensaje, setMensaje] = useState('')
 
+  // Sucursales
+  const [nuevaSucursalNombre, setNuevaSucursalNombre] = useState('')
+  const [editandoSucursalId, setEditandoSucursalId] = useState<number | null>(null)
+  const [editarSucursalNombre, setEditarSucursalNombre] = useState('')
+
   // Estado para la edición de empleadas en línea
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editNombre, setEditNombre] = useState('')
@@ -140,6 +145,32 @@ export default function SettingsView() {
     }
   }
 
+  // --- Sucursales ---
+  const crearSucursal = async () => {
+    if (!nuevaSucursalNombre.trim()) return
+    await supabase.from('sucursales').insert({ nombre: nuevaSucursalNombre.trim() })
+    setNuevaSucursalNombre('')
+    fetchSucursales()
+  }
+
+  const iniciarEdicionSucursal = (s: any) => {
+    setEditandoSucursalId(s.id)
+    setEditarSucursalNombre(s.nombre)
+  }
+
+  const guardarSucursal = async () => {
+    if (!editarSucursalNombre.trim() || editandoSucursalId === null) return
+    await supabase.from('sucursales').update({ nombre: editarSucursalNombre.trim() }).eq('id', editandoSucursalId)
+    setEditandoSucursalId(null)
+    setEditarSucursalNombre('')
+    fetchSucursales()
+  }
+
+  const toggleActivoSucursal = async (id: number, activo: boolean) => {
+    await supabase.from('sucursales').update({ activo: !activo }).eq('id', id)
+    fetchSucursales()
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -215,7 +246,7 @@ export default function SettingsView() {
                 required
               >
                 <option value="">Seleccione...</option>
-                {sucursales.map((s) => (
+                {sucursales.filter(s => s.activo !== false).map((s) => (
                   <option key={s.id} value={s.id}>{s.nombre}</option>
                 ))}
               </select>
@@ -282,7 +313,7 @@ export default function SettingsView() {
                             onChange={(e) => setEditSucursalId(e.target.value)}
                             className="rounded border border-gray-300 px-2 py-1 text-gray-900 focus:outline-none focus:border-blue-500 w-full"
                           >
-                            {sucursales.map((s) => (
+                            {sucursales.filter(s => s.activo !== false).map((s) => (
                               <option key={s.id} value={s.id}>{s.nombre}</option>
                             ))}
                           </select>
@@ -355,6 +386,112 @@ export default function SettingsView() {
                               className="text-xs text-red-600 font-semibold hover:text-red-800 transition-colors"
                             >
                               Eliminar
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Gestión de Sucursales */}
+      <div className="bg-white rounded border border-gray-200 p-6">
+        <h3 className="mb-6 text-sm font-bold uppercase tracking-wider text-gray-700">Sucursales</h3>
+
+        {/* Formulario nueva sucursal */}
+        <div className="mb-6 flex items-end gap-3 border-b border-gray-100 pb-6">
+          <div className="flex-1">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Nombre</label>
+            <input
+              type="text"
+              value={nuevaSucursalNombre}
+              onChange={(e) => setNuevaSucursalNombre(e.target.value)}
+              placeholder="Ej: Sucursal Sur"
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <button
+            onClick={crearSucursal}
+            disabled={!nuevaSucursalNombre.trim()}
+            className="rounded bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-40"
+          >
+            + Nueva Sucursal
+          </button>
+        </div>
+
+        {/* Tabla de sucursales */}
+        <div className="overflow-x-auto rounded border border-gray-200">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="px-4 py-3 text-sm font-semibold text-gray-900">Nombre</th>
+                <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Estado</th>
+                <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 text-sm">
+              {sucursales.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="px-4 py-8 text-center text-sm text-gray-500">
+                    No hay sucursales registradas
+                  </td>
+                </tr>
+              ) : (
+                sucursales.map((s) => {
+                  const editando = editandoSucursalId === s.id
+                  return (
+                    <tr key={s.id} className="hover:bg-gray-50/50 ready-transition">
+                      <td className="px-4 py-3">
+                        {editando ? (
+                          <input
+                            type="text"
+                            value={editarSucursalNombre}
+                            onChange={(e) => setEditarSucursalNombre(e.target.value)}
+                            className="rounded border border-gray-300 px-2 py-1 text-gray-900 focus:outline-none focus:border-blue-500 w-full"
+                          />
+                        ) : (
+                          <span className="font-medium text-gray-900">{s.nombre}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold ${s.activo !== false ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                          {s.activo !== false ? 'Activo' : 'Inactivo'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center space-x-3">
+                        {editando ? (
+                          <>
+                            <button
+                              onClick={guardarSucursal}
+                              className="text-xs bg-green-600 text-white font-medium px-2 py-1 rounded hover:bg-green-700 transition-colors"
+                            >
+                              Guardar
+                            </button>
+                            <button
+                              onClick={() => setEditandoSucursalId(null)}
+                              className="text-xs bg-gray-200 text-gray-700 font-medium px-2 py-1 rounded hover:bg-gray-300 transition-colors"
+                            >
+                              Cancelar
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => iniciarEdicionSucursal(s)}
+                              className="text-xs text-blue-600 font-semibold hover:text-blue-800 transition-colors"
+                            >
+                              Modificar
+                            </button>
+                            <button
+                              onClick={() => toggleActivoSucursal(s.id, s.activo !== false)}
+                              className={`text-xs font-semibold transition-colors ${s.activo !== false ? 'text-red-600 hover:text-red-800' : 'text-green-600 hover:text-green-800'}`}
+                            >
+                              {s.activo !== false ? 'Desactivar' : 'Activar'}
                             </button>
                           </>
                         )}

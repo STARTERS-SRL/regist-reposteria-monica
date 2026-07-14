@@ -66,7 +66,10 @@ export async function fetchTodaySales(branchId?: string): Promise<number> {
   }
 
   const { data, error } = await query
-  if (error) return 0
+  if (error) {
+    console.error('fetchTodaySales error:', error.message, '| details:', error.details, '| hint:', error.hint, '| code:', error.code)
+    return 0
+  }
   return data?.reduce((sum, s) => sum + Number(s.total), 0) || 0
 }
 
@@ -87,7 +90,10 @@ export async function fetchCashIncome(branchId?: string): Promise<number> {
   }
 
   const { data, error } = await query
-  if (error) return 0
+  if (error) {
+    console.error('fetchCashIncome error:', error.message, '| details:', error.details, '| hint:', error.hint, '| code:', error.code)
+    return 0
+  }
   return data?.reduce((sum, s) => sum + Number(s.total), 0) || 0
 }
 
@@ -108,7 +114,10 @@ export async function fetchQRIncome(branchId?: string): Promise<number> {
   }
 
   const { data, error } = await query
-  if (error) return 0
+  if (error) {
+    console.error('fetchQRIncome error:', error.message, '| details:', error.details, '| hint:', error.hint, '| code:', error.code)
+    return 0
+  }
   return data?.reduce((sum, s) => sum + Number(s.total), 0) || 0
 }
 
@@ -162,7 +171,10 @@ export async function fetchRecentSales(limit: number = 5, branchId?: string): Pr
   }
 
   const { data, error } = await query
-  if (error || !data) return []
+  if (error || !data) {
+    if (error) console.error('fetchRecentSales error:', error.message, '| details:', error.details, '| hint:', error.hint, '| code:', error.code)
+    return []
+  }
 
   return data.map(sale => ({
     id: String(sale.id),
@@ -185,8 +197,10 @@ export async function fetchBranches(): Promise<Branch[]> {
     .order('nombre', { ascending: true })
 
   if (error || !data) return []
-  return data.map(b => ({
-    id: String(b.id),
-    name: b.nombre
-  }))
+  return data
+    .filter((b: any) => b.activo !== false)
+    .map(b => ({
+      id: String(b.id),
+      name: b.nombre
+    }))
 }

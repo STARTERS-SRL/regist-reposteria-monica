@@ -11,18 +11,7 @@ import InventoryView from './inventory-view'
 import SettingsView from './settings-view'
 import PosView from './pos-view'
 import ProductsView from './products-view'
-
-interface Sale {
-  id: string
-  branch: string
-  total: string
-  method: string
-  date: string
-  estado: 'activa' | 'anulada'
-  vendedor: string
-  montoEfectivo?: number
-  montoQr?: number
-}
+import { mapearVenta, VentaEnriquecida } from '@/lib/ventas-utils'
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -39,7 +28,7 @@ export default function DashboardLayout() {
   }, [])
 
   // NUEVOS ESTADOS EXCLUSIVOS PARA LAS VENTAS DE HOY DEL DASHBOARD
-  const [todaySales, setTodaySales] = useState<Sale[]>([])
+  const [todaySales, setTodaySales] = useState<VentaEnriquecida[]>([])
   const [loadingSales, setLoadingSales] = useState(false)
 
   // EFECTO PARA TRAER LAS VENTAS DE HOY AUTOMÁTICAMENTE CUANDO CAMBIE LA SUCURSAL O EL MENÚ
@@ -54,7 +43,7 @@ export default function DashboardLayout() {
 
         let query = supabase
           .from('ventas')
-          .select('id, total, metodo_pago, monto_efectivo, monto_qr, fecha, estado, sucursales(nombre), usuario_id, usuarios(nombre)')
+          .select('id, total, metodo_pago, monto_efectivo, monto_qr, subtotal_original, descuento, fecha, estado, sucursales(nombre), usuario_id, usuarios(nombre), detalle_ventas(cantidad,productos(nombre))')
           .gte('fecha', startOfToday.toISOString())
           .order('fecha', { ascending: false })
 
@@ -67,23 +56,22 @@ export default function DashboardLayout() {
 
         if (data) {
           setTodaySales(
-            data.map((v: any) => ({
-              id: String(v.id),
-              branch: v.sucursales?.nombre || '-',
-              total: String(v.total),
-              method: v.metodo_pago === 'efectivo' ? 'Efectivo' : v.metodo_pago === 'mixto' ? 'Mixto' : 'QR',
-              date: new Date(v.fecha).toLocaleDateString('es-BO', {
-                hour: '2-digit', minute: '2-digit'
-              }),
-              estado: v.estado,
-              vendedor: v.usuarios?.nombre || 'Sin asignar',
-              montoEfectivo: Number(v.monto_efectivo) || 0,
-              montoQr: Number(v.monto_qr) || 0
-            }))
+            data.map((v: any) => {
+              const base = mapearVenta(v)
+              return {
+                ...base,
+                branch: v.sucursales?.nombre || '-',
+                method: v.metodo_pago === 'efectivo' ? 'Efectivo' : v.metodo_pago === 'mixto' ? 'Mixto' : 'QR',
+                date: new Date(v.fecha).toLocaleDateString('es-BO', {
+                  hour: '2-digit', minute: '2-digit'
+                }),
+              }
+            })
           )
         }
       } catch (err) {
-        console.error('Error cargando ventas de hoy en layout:', err)
+        const supaErr = err as any
+        console.error('Error cargando ventas de hoy en layout:', supaErr?.message || supaErr, '| details:', supaErr?.details, '| hint:', supaErr?.hint, '| code:', supaErr?.code)
       } finally {
         setLoadingSales(false)
       }

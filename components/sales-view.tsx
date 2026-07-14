@@ -3,18 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase, fetchBranches, Branch } from '@/lib/supabase-client'
 import SalesTable from './sales-table'
-
-interface VentaProcesada {
-  id: string
-  branch: string
-  total: string
-  method: string
-  date: string
-  estado: 'activa' | 'anulada'
-  vendedor: string
-  montoEfectivo?: number
-  montoQr?: number
-}
+import { mapearVenta, VentaEnriquecida } from '@/lib/ventas-utils'
 
 export default function SalesView() {
   const [selectedBranch, setSelectedBranch] = useState<string>('all')
@@ -23,7 +12,7 @@ export default function SalesView() {
   const [selectedDay, setSelectedDay] = useState<string>('')
 
   const [branches, setBranches] = useState<Branch[]>([])
-  const [sales, setSales] = useState<VentaProcesada[]>([])
+  const [sales, setSales] = useState<VentaEnriquecida[]>([])
   const [loading, setLoading] = useState<boolean>(true)
 
   const years = ['2024', '2025', '2026', '2027']
@@ -55,11 +44,17 @@ export default function SalesView() {
           metodo_pago,
           monto_efectivo,
           monto_qr,
+          subtotal_original,
+          descuento,
           fecha,
           estado,
           usuario_id,
           sucursales ( nombre ),
-          usuarios ( nombre )
+          usuarios ( nombre ),
+          detalle_ventas (
+            cantidad,
+            productos ( nombre )
+          )
         `)
         .order('fecha', { ascending: false })
 
@@ -93,24 +88,12 @@ export default function SalesView() {
       if (error) throw error
 
       if (data) {
-        const mappedSales = data.map((v: any) => ({
-          id: String(v.id),
-          branch: v.sucursales?.nombre || 'General',
-          total: String(v.total),
-          method: v.metodo_pago.toUpperCase(),
-          date: new Date(v.fecha).toLocaleDateString('es-BO', {
-            year: 'numeric', month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit'
-          }),
-          estado: v.estado,
-          vendedor: v.usuarios?.nombre || 'Sin asignar',
-          montoEfectivo: Number(v.monto_efectivo) || 0,
-          montoQr: Number(v.monto_qr) || 0
-        }))
+        const mappedSales = data.map((v: any) => mapearVenta(v))
         setSales(mappedSales)
       }
     } catch (error) {
-      console.error('Error cargando historial de ventas:', error)
+      const supaErr = error as any
+      console.error('Error cargando historial de ventas:', supaErr?.message || supaErr, '| details:', supaErr?.details, '| hint:', supaErr?.hint, '| code:', supaErr?.code)
     } finally {
       setLoading(false)
     }

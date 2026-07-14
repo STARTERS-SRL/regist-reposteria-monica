@@ -19,7 +19,7 @@ export default function Header({ selectedBranchId, onBranchChange, onSidebarTogg
 
   useEffect(() => {
     supabase.from('sucursales').select('*').order('nombre').then(({ data }) => {
-      if (data) setBranches(data)
+      if (data) setBranches(data.filter((b: any) => b.activo !== false))
     })
   }, [])
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase-client'
+import { mapearVenta } from '@/lib/ventas-utils'
 
 interface Producto {
   id: number
@@ -35,6 +36,9 @@ interface VentaLocal {
   vendedor: string
   monto_efectivo?: number
   monto_qr?: number
+  subtotal_original?: number
+  descuento?: number
+  detalles?: { cantidad: number; producto: string }[]
 }
 
 interface JornadaActual {
@@ -63,10 +67,16 @@ export default function PosView() {
   const [metodoPago, setMetodoPago] = useState<'efectivo' | 'qr' | 'mixto'>('efectivo')
   const [montoEfectivoMixto, setMontoEfectivoMixto] = useState<string>('')
   const [montoQrMixto, setMontoQrMixto] = useState<string>('')
+  const [modoOferta, setModoOferta] = useState(false)
+  const [precioOriginalOferta, setPrecioOriginalOferta] = useState(0)
+  const [nuevoTotalOfertaStr, setNuevoTotalOfertaStr] = useState('')
+  const [mostrarModalOferta, setMostrarModalOferta] = useState(false)
+  const [errorOferta, setErrorOferta] = useState('')
   const [mensaje, setMensaje] = useState('')
   const [cargando, setCargando] = useState(false)
   const [pestañaActiva, setPestañaActiva] = useState<SubPestañaPos>('punto_venta')
   const [ventasDeHoy, setVentasDeHoy] = useState<VentaLocal[]>([])
+  const [productosExpandId, setProductosExpandId] = useState<string | null>(null)
   const [valoresInputs, setValoresInputs] = useState<Record<number, string>>({})
   const [stockSucursal, setStockSucursal] = useState<StockReal[]>([])
   const [stockJornada, setStockJornada] = useState<StockReal[]>([])
@@ -107,6 +117,9 @@ export default function PosView() {
     setMetodoPago('efectivo')
     setMontoEfectivoMixto('')
     setMontoQrMixto('')
+    setModoOferta(false)
+    setPrecioOriginalOferta(0)
+    setNuevoTotalOfertaStr('')
     setMensaje('')
     setPestañaActiva('punto_venta')
     setVentasDeHoy([])
@@ -123,7 +136,7 @@ export default function PosView() {
 
   const fetchSucursales = async () => {
     const { data } = await supabase.from('sucursales').select('*').order('nombre')
-    if (data) setSucursales(data)
+    if (data) setSucursales(data.filter((s: any) => s.activo !== false))
   }
 
   const fetchVentasLocalesHoy = async () => {
@@ -132,24 +145,34 @@ export default function PosView() {
     const hoy = hoyIso()
     const startOfToday = `${hoy}T00:00:00.000Z`
 
-    const { data } = await supabase
+    const { data, error: errHoy } = await supabase
       .from('ventas')
-      .select('id, fecha, total, metodo_pago, monto_efectivo, monto_qr, estado, usuario_id, usuarios(nombre)')
+      .select('id, fecha, total, metodo_pago, monto_efectivo, monto_qr, subtotal_original, descuento, estado, usuario_id, usuarios(nombre), detalle_ventas(cantidad,productos(nombre))')
       .eq('sucursal_id', sucursalId)
       .gte('fecha', startOfToday)
       .order('fecha', { ascending: false })
 
+    if (errHoy) {
+      console.error('fetchVentasLocalesHoy error:', errHoy.message, '| details:', errHoy.details, '| hint:', errHoy.hint, '| code:', errHoy.code)
+    }
+
     if (data) {
-      setVentasDeHoy(data.map(v => ({
-        id: String(v.id),
-        fecha: new Date(v.fecha).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }),
-        total: Number(v.total),
-        metodo_pago: v.metodo_pago === 'efectivo' ? 'Efectivo' : v.metodo_pago === 'mixto' ? 'Mixto' : 'QR',
-        estado: v.estado,
-        vendedor: (v as any).usuarios?.nombre || 'Sin asignar',
-        monto_efectivo: Number((v as any).monto_efectivo) || 0,
-        monto_qr: Number((v as any).monto_qr) || 0,
-      })))
+      setVentasDeHoy(data.map(v => {
+        const enriquecida = mapearVenta(v)
+        return {
+          id: enriquecida.id,
+          fecha: new Date(v.fecha).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }),
+          total: Number(enriquecida.total),
+          metodo_pago: v.metodo_pago === 'efectivo' ? 'Efectivo' : v.metodo_pago === 'mixto' ? 'Mixto' : 'QR',
+          estado: enriquecida.estado,
+          vendedor: enriquecida.vendedor,
+          monto_efectivo: enriquecida.montoEfectivo,
+          monto_qr: enriquecida.montoQr,
+          subtotal_original: enriquecida.subtotalOriginal,
+          descuento: enriquecida.descuento,
+          detalles: enriquecida.detalles,
+        }
+      }))
     }
   }
 
@@ -372,6 +395,11 @@ export default function PosView() {
   const agregarAlCarrito = (producto: Producto) => {
     if (!puedeOperar || !jornadaActual.apertura || jornadaActual.bloqueada) return
 
+    if (modoOferta) {
+      setModoOferta(false)
+      setNuevoTotalOfertaStr('')
+    }
+
     const stockDisponible = calcularStockDisponible(producto.id)
 
     if (stockDisponible <= 0) {
@@ -393,6 +421,11 @@ export default function PosView() {
   const quitarDelCarrito = (productoId: number) => {
     if (!puedeOperar || jornadaActual.bloqueada) return
 
+    if (modoOferta) {
+      setModoOferta(false)
+      setNuevoTotalOfertaStr('')
+    }
+
     setCarrito((prev) => {
       const existente = prev.find((item) => item.producto.id === productoId)
       if (existente && existente.cantidad > 1) {
@@ -405,6 +438,9 @@ export default function PosView() {
   }
 
   const total = carrito.reduce((sum, item) => sum + item.producto.precio * item.cantidad, 0)
+
+  const totalACobrar = modoOferta && nuevoTotalOfertaStr ? parseFloat(nuevoTotalOfertaStr) : total
+  const descuentoAplicado = total - totalACobrar
 
   const registrarVenta = async () => {
     if (!sucursalId || carrito.length === 0 || !puedeOperar) {
@@ -436,31 +472,34 @@ export default function PosView() {
         setCargando(false)
         return
       }
-      if (ef + qr !== total) {
+      if (ef + qr !== totalACobrar) {
         setMensaje('La suma de efectivo y QR debe ser igual al total')
         setCargando(false)
         return
       }
     }
 
-    const montoEf = metodoPago === 'efectivo' ? total : metodoPago === 'mixto' ? parseFloat(montoEfectivoMixto) : 0
-    const montoQ = metodoPago === 'qr' ? total : metodoPago === 'mixto' ? parseFloat(montoQrMixto) : 0
+    const montoEf = metodoPago === 'efectivo' ? totalACobrar : metodoPago === 'mixto' ? parseFloat(montoEfectivoMixto) : 0
+    const montoQ = metodoPago === 'qr' ? totalACobrar : metodoPago === 'mixto' ? parseFloat(montoQrMixto) : 0
 
     const { data: venta, error: errorVenta } = await supabase
       .from('ventas')
       .insert({
         sucursal_id: sucursalId,
         usuario_id: usuario?.id || null,
-        total,
+        total: totalACobrar,
         estado: 'activa',
         metodo_pago: metodoPago,
         monto_efectivo: montoEf,
         monto_qr: montoQ,
+        subtotal_original: modoOferta ? precioOriginalOferta : totalACobrar,
+        descuento: descuentoAplicado,
         fecha: new Date().toISOString(),
       })
       .select().single()
 
     if (errorVenta || !venta) {
+      console.error('Error al registrar venta:', errorVenta?.message || errorVenta, '| details:', errorVenta?.details, '| hint:', errorVenta?.hint, '| code:', errorVenta?.code)
       setMensaje('Error al registrar venta')
       setCargando(false)
       return
@@ -503,6 +542,8 @@ export default function PosView() {
     setMontoEfectivoMixto('')
     setMontoQrMixto('')
     setMetodoPago('efectivo')
+    setModoOferta(false)
+    setNuevoTotalOfertaStr('')
     await fetchVentasLocalesHoy()
     setCargando(false)
     setTimeout(() => setMensaje(''), 3000)
@@ -762,6 +803,7 @@ export default function PosView() {
               <th className="px-4 py-3">Hora</th>
               <th className="px-4 py-3">Vendedor</th>
               <th className="px-4 py-3">Método Pago</th>
+              <th className="px-4 py-3 text-center">Productos</th>
               <th className="px-4 py-3 text-right">Monto</th>
               <th className="px-4 py-3 text-center">Estado</th>
             </tr>
@@ -769,7 +811,7 @@ export default function PosView() {
           <tbody className="divide-y divide-gray-100">
             {ventasDeHoy.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-xs text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-xs text-gray-400">
                   Aún no hay ventas registradas este día.
                 </td>
               </tr>
@@ -789,8 +831,43 @@ export default function PosView() {
                     ) : (
                       <span className="font-medium text-gray-700">{v.metodo_pago}</span>
                     )}
+                    {(v.descuento ?? 0) > 0 && (
+                      <span className="ml-1 inline-block rounded-sm px-1.5 py-0.5 text-[10px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200">Oferta</span>
+                    )}
                   </td>
-                  <td className="px-4 py-3 text-right font-bold text-gray-900">Bs. {v.total.toFixed(2)}</td>
+                  <td className="px-4 py-3 text-center">
+                    {v.detalles && v.detalles.length > 0 ? (
+                      <div>
+                        <button
+                          onClick={() => setProductosExpandId(productosExpandId === v.id ? null : v.id)}
+                          className="text-[10px] font-semibold uppercase text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          {productosExpandId === v.id ? 'Ocultar' : `${v.detalles.length} producto${v.detalles.length > 1 ? 's' : ''}`}
+                        </button>
+                        {productosExpandId === v.id && (
+                          <div className="mt-2 space-y-1">
+                            {v.detalles.map((d, i) => (
+                              <div key={i} className="text-[10px] text-gray-600 whitespace-nowrap">
+                                {d.cantidad}x {d.producto}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right font-bold text-gray-900">
+                    {(v.descuento ?? 0) > 0 ? (
+                      <div className="text-xs space-y-0.5">
+                        <span className="text-gray-500 line-through">Bs. {(v.subtotal_original ?? 0).toFixed(2)}</span>
+                        <div className="text-gray-900 font-bold">Bs. {v.total.toFixed(2)}</div>
+                      </div>
+                    ) : (
+                      <span>Bs. {v.total.toFixed(2)}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm font-bold ${v.estado === 'activa' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
                       {v.estado}
@@ -885,18 +962,49 @@ export default function PosView() {
                 </div>
               ))}
               <div className="pt-2 border-t border-gray-200 flex justify-between items-center text-sm font-bold">
-                <span>Total:</span>
-                <span>Bs. {total.toFixed(2)}</span>
+                {modoOferta ? (
+                  <div className="space-y-0.5">
+                    <span className="text-gray-400 line-through text-xs">Bs. {total.toFixed(2)}</span>
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-sm text-gray-900">Bs. {totalACobrar.toFixed(2)}</span>
+                      <span className="text-[10px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200 rounded-sm px-1.5 py-0.5">Oferta</span>
+                    </div>
+                    <span className="text-[11px] text-gray-500 block">Ahorro: Bs. {descuentoAplicado.toFixed(2)}</span>
+                  </div>
+                ) : (
+                  <span>Bs. {total.toFixed(2)}</span>
+                )}
               </div>
             </div>
           )}
+
+          <div className="pt-2 border-t border-gray-100">
+            {modoOferta ? (
+              <button onClick={() => { setModoOferta(false); setNuevoTotalOfertaStr(''); }} className="w-full rounded-sm border border-amber-200 bg-amber-50 h-8 text-xs font-semibold text-amber-700 hover:bg-amber-100">
+                Cancelar Oferta
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setPrecioOriginalOferta(total)
+                  setNuevoTotalOfertaStr(total.toFixed(2))
+                  setErrorOferta('')
+                  setMostrarModalOferta(true)
+                }}
+                disabled={carrito.length === 0}
+                className="w-full rounded-sm border border-gray-200 bg-white h-8 text-xs font-semibold text-gray-600 hover:border-gray-400 disabled:opacity-40"
+              >
+                Oferta (Descuento)
+              </button>
+            )}
+          </div>
 
           <div className="space-y-2 pt-2 border-t border-gray-100">
             <label className="block text-[11px] font-bold uppercase text-gray-400">Modalidad de Pago</label>
             <div className="flex gap-2">
               <button onClick={() => { setMetodoPago('efectivo'); setMontoEfectivoMixto(''); setMontoQrMixto(''); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'efectivo' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>Efectivo</button>
               <button onClick={() => { setMetodoPago('qr'); setMontoEfectivoMixto(''); setMontoQrMixto(''); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'qr' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>QR</button>
-              <button onClick={() => { setMetodoPago('mixto'); setMontoEfectivoMixto(String(total)); setMontoQrMixto('0'); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'mixto' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>Mixto</button>
+              <button onClick={() => { setMetodoPago('mixto'); setMontoEfectivoMixto(String(totalACobrar)); setMontoQrMixto('0'); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'mixto' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>Mixto</button>
             </div>
             {metodoPago === 'mixto' && (
               <div className="space-y-2 pt-1">
@@ -912,7 +1020,7 @@ export default function PosView() {
                       setMontoEfectivoMixto(val)
                       const num = parseFloat(val)
                       if (!isNaN(num) && num >= 0) {
-                        setMontoQrMixto(Math.max(0, total - num).toFixed(2))
+                        setMontoQrMixto(Math.max(0, totalACobrar - num).toFixed(2))
                       }
                     }}
                     className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-gray-500"
@@ -930,7 +1038,7 @@ export default function PosView() {
                       setMontoQrMixto(val)
                       const num = parseFloat(val)
                       if (!isNaN(num) && num >= 0) {
-                        setMontoEfectivoMixto(Math.max(0, total - num).toFixed(2))
+                        setMontoEfectivoMixto(Math.max(0, totalACobrar - num).toFixed(2))
                       }
                     }}
                     className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-gray-500"
@@ -945,6 +1053,68 @@ export default function PosView() {
           </button>
         </div>
       </div>
+
+      {mostrarModalOferta && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setMostrarModalOferta(false)}>
+          <div className="bg-white rounded-sm shadow-xl p-6 w-80 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-gray-900">Aplicar Oferta</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Total original:</span>
+                <span className="font-bold text-gray-900">Bs. {precioOriginalOferta.toFixed(2)}</span>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Nuevo total:</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={nuevoTotalOfertaStr}
+                  onChange={(e) => {
+                    setNuevoTotalOfertaStr(e.target.value)
+                    setErrorOferta('')
+                  }}
+                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-gray-500"
+                  placeholder="0.00"
+                  autoFocus
+                />
+                {errorOferta && <p className="text-xs text-red-600 mt-1">{errorOferta}</p>}
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setMostrarModalOferta(false); setErrorOferta('') }}
+                className="px-4 py-2 text-xs font-medium border border-gray-200 rounded-sm text-gray-600 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  const val = parseFloat(nuevoTotalOfertaStr)
+                  if (!nuevoTotalOfertaStr || isNaN(val)) {
+                    setErrorOferta('Debe ingresar un número válido')
+                    return
+                  }
+                  if (val <= 0) {
+                    setErrorOferta('El total debe ser mayor a cero')
+                    return
+                  }
+                  if (val > precioOriginalOferta) {
+                    setErrorOferta('No puede ser mayor al total original')
+                    return
+                  }
+                  setModoOferta(true)
+                  setMostrarModalOferta(false)
+                  setErrorOferta('')
+                }}
+                className="px-4 py-2 text-xs font-medium bg-gray-900 text-white rounded-sm hover:bg-gray-800"
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 

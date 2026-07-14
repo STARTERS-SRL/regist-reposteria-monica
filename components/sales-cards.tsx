@@ -51,7 +51,11 @@ export default function SalesCards({ branchId }: Props) {
 
     if (branchId) query = query.eq('sucursal_id', branchId)
 
-    const { data: ventas } = await query
+    const { data: ventas, error: errVentas } = await query
+
+    if (errVentas) {
+      console.error('sales-cards ventas error:', errVentas.message, '| details:', errVentas.details, '| hint:', errVentas.hint, '| code:', errVentas.code)
+    }
 
     if (ventas) {
       setVentasHoy(ventas.reduce((s, v) => s + Number(v.total), 0))
