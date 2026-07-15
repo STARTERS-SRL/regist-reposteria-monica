@@ -28,9 +28,16 @@ export default function SettingsView() {
   const [editSucursalId, setEditSucursalId] = useState('')
   const [editActivo, setEditActivo] = useState(true)
 
+  // POS settings
+  const [ocultarAgotados, setOcultarAgotados] = useState(true)
+
   useEffect(() => {
     fetchEmpleadas()
     fetchSucursales()
+    const stored = localStorage.getItem('ocultar_agotados')
+    if (stored !== null) {
+      setOcultarAgotados(stored !== 'false')
+    }
   }, [])
 
   const fetchEmpleadas = async () => {
@@ -205,6 +212,24 @@ export default function SettingsView() {
             Actualizar PIN Maestro
           </button>
         </form>
+      </div>
+
+      {/* POS Settings */}
+      <div className="bg-white rounded border border-gray-200 p-6">
+        <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-gray-700">Punto de Venta</h3>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={ocultarAgotados}
+            onChange={(e) => {
+              const val = e.target.checked
+              localStorage.setItem('ocultar_agotados', String(val))
+              setOcultarAgotados(val)
+            }}
+            className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
+          />
+          <span className="text-sm text-gray-700">Ocultar productos agotados del Punto de Venta</span>
+        </label>
       </div>
 
       {/* Gestión de Empleadas */}

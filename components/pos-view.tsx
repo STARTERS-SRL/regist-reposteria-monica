@@ -927,8 +927,12 @@ export default function PosView() {
                 return a.nombre.localeCompare(b.nombre)
               })
 
-            const porciones = ordenar(productos.filter(p => (p as any).tipo === 'Porción'))
-            const enteros = ordenar(productos.filter(p => (p as any).tipo === 'Entero'))
+            const ocultarAgotados = localStorage.getItem('ocultar_agotados') !== 'false'
+            const productosVisibles = ocultarAgotados
+              ? productos.filter(p => obtenerStockActual(p.id) > 0)
+              : productos
+            const porciones = ordenar(productosVisibles.filter(p => (p as any).tipo === 'Porción'))
+            const enteros = ordenar(productosVisibles.filter(p => (p as any).tipo === 'Entero'))
 
             const renderSeccion = (titulo: string, emoji: string, items: Producto[]) => (
               <div className="space-y-2">
