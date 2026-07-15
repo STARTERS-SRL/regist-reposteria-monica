@@ -940,20 +940,34 @@ export default function PosView() {
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {items.map((producto) => {
                     const disponible = calcularStockDisponible(producto.id)
+                    const enCarrito = carrito.some(item => item.producto.id === producto.id)
+                    const cantidadEnCarro = cantidadEnCarrito(producto.id)
                     return (
                       <button
                         key={producto.id}
                         onClick={() => agregarAlCarrito(producto)}
                         disabled={disponible <= 0}
-                        className="rounded-sm border border-gray-200 bg-white p-3 text-left transition-all hover:border-gray-400 disabled:opacity-40"
+                        className={`rounded-sm border p-3 text-left transition-all duration-150 disabled:opacity-40 active:scale-[1.03] ${
+                          enCarrito
+                            ? 'border-gray-400 bg-gray-50'
+                            : 'border-gray-200 bg-white hover:border-gray-400'
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-1">
-                          <p className="font-semibold text-sm text-gray-900 leading-tight">{producto.nombre}</p>
+                          <p className="font-semibold text-sm text-gray-900 leading-tight">
+                            {enCarrito && <span className="text-gray-400 mr-0.5">✓</span>}
+                            {producto.nombre}
+                          </p>
                           <span className={`whitespace-nowrap text-[11px] font-medium px-1.5 py-0.5 rounded-sm shrink-0 ${disponible > 0 ? 'bg-green-50 text-green-700' : 'bg-red-100 text-red-900 font-bold'}`}>
                             {disponible > 0 ? `Stock: ${disponible}` : 'Agotado'}
                           </span>
                         </div>
-                        <span className="text-xs font-bold text-gray-600">Bs. {producto.precio}</span>
+                        <div className="flex items-center justify-between mt-0.5">
+                          <span className="text-xs font-bold text-gray-600">Bs. {producto.precio}</span>
+                          {enCarrito && (
+                            <span className="text-[10px] text-gray-400 font-medium">Cant: {cantidadEnCarro}</span>
+                          )}
+                        </div>
                       </button>
                     )
                   })}
@@ -970,14 +984,26 @@ export default function PosView() {
           })()}
         </div>
 
-        <div className="rounded-sm border border-gray-200 bg-white p-4 space-y-4 h-fit">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Pedido Actual</h3>
+        <div className="rounded-sm border border-gray-200 bg-[#fafafa] p-5 space-y-4 h-fit">
+          <div className="flex items-center gap-2 pb-3 border-b border-gray-200">
+            <span className="text-xs">🛒</span>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Pedido Actual</h3>
+            {carrito.length > 0 && (
+              <span className="ml-auto text-[10px] font-bold text-gray-400">
+                {carrito.length} artículo{carrito.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
           {carrito.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-6">Carrito vacío.</p>
+            <div className="text-center py-8 space-y-2">
+              <div className="text-2xl">🛒</div>
+              <p className="text-xs text-gray-400">Aún no agregaste productos.</p>
+              <p className="text-[11px] text-gray-300">Selecciona un producto para comenzar la venta.</p>
+            </div>
           ) : (
-            <div className="space-y-3">
+            <div className="divide-y divide-gray-100">
               {carrito.map((item) => (
-                <div key={item.producto.id} className="flex items-center justify-between border-b border-gray-100 pb-2">
+                <div key={item.producto.id} className="flex items-center justify-between py-2 first:pt-0 last:pb-0">
                   <div>
                     <p className="text-xs font-semibold text-gray-900">{item.producto.nombre}</p>
                     <p className="text-[11px] text-gray-500">Bs. {item.producto.precio} x {item.cantidad}</p>
@@ -989,91 +1015,93 @@ export default function PosView() {
                   </div>
                 </div>
               ))}
-              <div className="pt-2 border-t border-gray-200 flex justify-between items-center text-sm font-bold">
+              <div className="pt-3 border-t-2 border-gray-300 flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Total</span>
                 {modoOferta ? (
-                  <div className="space-y-0.5">
+                  <div className="text-right space-y-0.5">
                     <span className="text-gray-400 line-through text-xs">Bs. {total.toFixed(2)}</span>
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-sm text-gray-900">Bs. {totalACobrar.toFixed(2)}</span>
+                    <div className="flex items-center gap-2 justify-end">
+                      <span className="text-lg font-extrabold text-gray-900">Bs. {totalACobrar.toFixed(2)}</span>
                       <span className="text-[10px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200 rounded-sm px-1.5 py-0.5">Oferta</span>
                     </div>
                     <span className="text-[11px] text-gray-500 block">Ahorro: Bs. {descuentoAplicado.toFixed(2)}</span>
                   </div>
                 ) : (
-                  <span>Bs. {total.toFixed(2)}</span>
+                  <span className="text-lg font-extrabold text-gray-900">Bs. {total.toFixed(2)}</span>
                 )}
               </div>
             </div>
           )}
 
-          <div className="pt-2 border-t border-gray-100">
-            {modoOferta ? (
-              <button onClick={() => { setModoOferta(false); setNuevoTotalOfertaStr(''); }} className="w-full rounded-sm border border-amber-200 bg-amber-50 h-8 text-xs font-semibold text-amber-700 hover:bg-amber-100">
-                Cancelar Oferta
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  setPrecioOriginalOferta(total)
-                  setNuevoTotalOfertaStr(total.toFixed(2))
-                  setErrorOferta('')
-                  setMostrarModalOferta(true)
-                }}
-                disabled={carrito.length === 0}
-                className="w-full rounded-sm border border-gray-200 bg-white h-8 text-xs font-semibold text-gray-600 hover:border-gray-400 disabled:opacity-40"
-              >
-                Oferta (Descuento)
-              </button>
-            )}
-          </div>
-
-          <div className="space-y-2 pt-2 border-t border-gray-100">
-            <label className="block text-[11px] font-bold uppercase text-gray-400">Modalidad de Pago</label>
-            <div className="flex gap-2">
-              <button onClick={() => { setMetodoPago('efectivo'); setMontoEfectivoMixto(''); setMontoQrMixto(''); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'efectivo' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>Efectivo</button>
-              <button onClick={() => { setMetodoPago('qr'); setMontoEfectivoMixto(''); setMontoQrMixto(''); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'qr' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>QR</button>
-              <button onClick={() => { setMetodoPago('mixto'); setMontoEfectivoMixto(String(totalACobrar)); setMontoQrMixto('0'); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'mixto' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>Mixto</button>
-            </div>
-            {metodoPago === 'mixto' && (
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-gray-600 w-16">Efectivo:</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={montoEfectivoMixto}
-                    onChange={(e) => {
-                      const val = e.target.value
-                      setMontoEfectivoMixto(val)
-                      const num = parseFloat(val)
-                      if (!isNaN(num) && num >= 0) {
-                        setMontoQrMixto(Math.max(0, totalACobrar - num).toFixed(2))
-                      }
-                    }}
-                    className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-gray-500"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-gray-600 w-16">QR:</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={montoQrMixto}
-                    onChange={(e) => {
-                      const val = e.target.value
-                      setMontoQrMixto(val)
-                      const num = parseFloat(val)
-                      if (!isNaN(num) && num >= 0) {
-                        setMontoEfectivoMixto(Math.max(0, totalACobrar - num).toFixed(2))
-                      }
-                    }}
-                    className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-gray-500"
-                  />
-                </div>
+          <div className="pt-3 border-t border-gray-200 space-y-3">
+            <div className="space-y-2">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-400">Modalidad de Pago</label>
+              <div className="flex gap-2">
+                <button onClick={() => { setMetodoPago('efectivo'); setMontoEfectivoMixto(''); setMontoQrMixto(''); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'efectivo' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>Efectivo</button>
+                <button onClick={() => { setMetodoPago('qr'); setMontoEfectivoMixto(''); setMontoQrMixto(''); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'qr' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>QR</button>
+                <button onClick={() => { setMetodoPago('mixto'); setMontoEfectivoMixto(String(totalACobrar)); setMontoQrMixto('0'); }} className={`flex-1 rounded-sm border h-8 text-xs font-semibold ${metodoPago === 'mixto' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>Mixto</button>
               </div>
-            )}
+              {metodoPago === 'mixto' && (
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-600 w-16">Efectivo:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={montoEfectivoMixto}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setMontoEfectivoMixto(val)
+                        const num = parseFloat(val)
+                        if (!isNaN(num) && num >= 0) {
+                          setMontoQrMixto(Math.max(0, totalACobrar - num).toFixed(2))
+                        }
+                      }}
+                      className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-gray-500"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-600 w-16">QR:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={montoQrMixto}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setMontoQrMixto(val)
+                        const num = parseFloat(val)
+                        if (!isNaN(num) && num >= 0) {
+                          setMontoEfectivoMixto(Math.max(0, totalACobrar - num).toFixed(2))
+                        }
+                      }}
+                      className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-gray-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="pt-2 border-t border-gray-100">
+              {modoOferta ? (
+                <button onClick={() => { setModoOferta(false); setNuevoTotalOfertaStr(''); }} className="w-full rounded-sm border border-amber-200 bg-amber-50 h-8 text-xs font-semibold text-amber-700 hover:bg-amber-100">
+                  Cancelar Oferta
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setPrecioOriginalOferta(total)
+                    setNuevoTotalOfertaStr(total.toFixed(2))
+                    setErrorOferta('')
+                    setMostrarModalOferta(true)
+                  }}
+                  disabled={carrito.length === 0}
+                  className="w-full rounded-sm border border-gray-200 bg-white h-8 text-xs font-semibold text-gray-600 hover:border-gray-400 disabled:opacity-40"
+                >
+                  Oferta (Descuento)
+                </button>
+              )}
+            </div>
           </div>
 
           <button onClick={registrarVenta} disabled={carrito.length === 0 || cargando} className="w-full rounded-sm bg-blue-600 h-10 text-xs font-semibold uppercase tracking-wider text-white hover:bg-blue-700 disabled:opacity-50">
