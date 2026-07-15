@@ -53,7 +53,10 @@ export default function SalesView() {
           usuarios ( nombre ),
           detalle_ventas (
             cantidad,
-            productos ( nombre )
+            productos ( nombre ),
+            es_producto_manual,
+            nombre_manual,
+            precio_unitario
           )
         `)
         .order('fecha', { ascending: false })

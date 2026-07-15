@@ -44,7 +44,7 @@ export default function DashboardLayout() {
 
         let query = supabase
           .from('ventas')
-          .select('id, total, metodo_pago, monto_efectivo, monto_qr, subtotal_original, descuento, fecha, estado, sucursales(nombre), usuario_id, usuarios(nombre), detalle_ventas(cantidad,productos(nombre))')
+          .select('id, total, metodo_pago, monto_efectivo, monto_qr, subtotal_original, descuento, fecha, estado, sucursales(nombre), usuario_id, usuarios(nombre), detalle_ventas(cantidad,productos(nombre),es_producto_manual,nombre_manual,precio_unitario)')
           .gte('fecha', startOfToday.toISOString())
           .order('fecha', { ascending: false })
 

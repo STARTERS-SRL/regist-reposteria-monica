@@ -19,6 +19,7 @@ interface Sucursal {
 interface CarritoItem {
   producto: Producto
   cantidad: number
+  esManual?: boolean
 }
 
 interface StockReal {
@@ -84,6 +85,10 @@ export default function PosView() {
   const [stockSucursal, setStockSucursal] = useState<StockReal[]>([])
   const [stockJornada, setStockJornada] = useState<StockReal[]>([])
   const [modoCierreAdministrador, setModoCierreAdministrador] = useState(false)
+  const [mostrarModalProductoManual, setMostrarModalProductoManual] = useState(false)
+  const [nombreProductoManual, setNombreProductoManual] = useState('')
+  const [precioProductoManual, setPrecioProductoManual] = useState('')
+  const [cantidadProductoManual, setCantidadProductoManual] = useState(1)
 
   const esAdministradora = usuario?.rol === 'admin'
   const esVendedora = usuario?.rol === 'empleado'
@@ -132,6 +137,10 @@ export default function PosView() {
     setStockSucursal([])
     setStockJornada([])
     setModoCierreAdministrador(false)
+    setMostrarModalProductoManual(false)
+    setNombreProductoManual('')
+    setPrecioProductoManual('')
+    setCantidadProductoManual(1)
   }
 
   const fetchProductos = async () => {
@@ -152,7 +161,7 @@ export default function PosView() {
 
     const { data, error: errHoy } = await supabase
       .from('ventas')
-      .select('id, fecha, total, metodo_pago, monto_efectivo, monto_qr, subtotal_original, descuento, estado, usuario_id, usuarios(nombre), detalle_ventas(cantidad,productos(nombre))')
+      .select('id, fecha, total, metodo_pago, monto_efectivo, monto_qr, subtotal_original, descuento, estado, usuario_id, usuarios(nombre), detalle_ventas(cantidad,productos(nombre),es_producto_manual,nombre_manual,precio_unitario)')
       .eq('sucursal_id', sucursalId)
       .gte('fecha', startOfToday)
       .order('fecha', { ascending: false })
@@ -407,7 +416,7 @@ export default function PosView() {
     setTimeout(() => setMensaje(''), 3000)
   }
 
-  const agregarAlCarrito = (producto: Producto) => {
+  const agregarAlCarrito = (producto: Producto, esManual = false) => {
     if (!puedeOperar || !jornadaActual.apertura || jornadaActual.bloqueada) return
 
     if (modoOferta) {
@@ -415,11 +424,12 @@ export default function PosView() {
       setNuevoTotalOfertaStr('')
     }
 
-    const stockDisponible = calcularStockDisponible(producto.id)
-
-    if (stockDisponible <= 0) {
-      alert('No hay stock suficiente en inventario vivo (0 disp.)')
-      return
+    if (!esManual) {
+      const stockDisponible = calcularStockDisponible(producto.id)
+      if (stockDisponible <= 0) {
+        alert('No hay stock suficiente en inventario vivo (0 disp.)')
+        return
+      }
     }
 
     setCarrito((prev) => {
@@ -429,7 +439,30 @@ export default function PosView() {
           item.producto.id === producto.id ? { ...item, cantidad: item.cantidad + 1 } : item,
         )
       }
-      return [...prev, { producto, cantidad: 1 }]
+      return [...prev, { producto, cantidad: 1, esManual }]
+    })
+  }
+
+  const agregarProductoManual = (nombre: string, precio: number, cantidad: number) => {
+    if (!puedeOperar || !jornadaActual.apertura || jornadaActual.bloqueada) return
+
+    if (modoOferta) {
+      setModoOferta(false)
+      setNuevoTotalOfertaStr('')
+    }
+
+    setCarrito((prev) => {
+      const existente = prev.find(
+        item => item.esManual && item.producto.nombre === nombre && item.producto.precio === precio
+      )
+      if (existente) {
+        return prev.map(item =>
+          item.esManual && item.producto.nombre === nombre && item.producto.precio === precio
+            ? { ...item, cantidad: item.cantidad + cantidad }
+            : item
+        )
+      }
+      return [...prev, { producto: { id: -Date.now(), nombre, precio }, cantidad, esManual: true }]
     })
   }
 
@@ -472,7 +505,7 @@ export default function PosView() {
     setCargando(true)
 
     for (const item of carrito) {
-      if (item.cantidad > obtenerStockActual(item.producto.id)) {
+      if (!item.esManual && item.cantidad > obtenerStockActual(item.producto.id)) {
         setMensaje('No hay stock suficiente para confirmar la venta')
         setCargando(false)
         return
@@ -520,12 +553,25 @@ export default function PosView() {
       return
     }
 
-    const detalles = carrito.map((item) => ({
-      venta_id: venta.id,
-      producto_id: item.producto.id,
-      cantidad: item.cantidad,
-      subtotal: item.producto.precio * item.cantidad,
-    }))
+    const detalles = carrito.map((item) => {
+      if (item.esManual) {
+        return {
+          venta_id: venta.id,
+          producto_id: null,
+          cantidad: item.cantidad,
+          subtotal: item.producto.precio * item.cantidad,
+          es_producto_manual: true,
+          nombre_manual: item.producto.nombre,
+          precio_unitario: item.producto.precio,
+        }
+      }
+      return {
+        venta_id: venta.id,
+        producto_id: item.producto.id,
+        cantidad: item.cantidad,
+        subtotal: item.producto.precio * item.cantidad,
+      }
+    })
 
     const { error: errorDetalles } = await supabase.from('detalle_ventas').insert(detalles)
 
@@ -536,6 +582,7 @@ export default function PosView() {
     }
 
     for (const item of carrito) {
+      if (item.esManual) continue
       const { data: inv } = await supabase
         .from('inventario')
         .select('id, cantidad')
@@ -983,6 +1030,25 @@ export default function PosView() {
               <>
                 {porciones.length > 0 && renderSeccion('PORCIONES', '🍰', porciones)}
                 {enteros.length > 0 && renderSeccion('ENTEROS', '📦', enteros)}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 py-1">
+                    <span className="text-xs">➕</span>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">OTROS</h3>
+                    <div className="flex-1 border-t border-gray-200" />
+                  </div>
+                  <button
+                    onClick={() => {
+                      setNombreProductoManual('')
+                      setPrecioProductoManual('')
+                      setCantidadProductoManual(1)
+                      setMostrarModalProductoManual(true)
+                    }}
+                    className="rounded-sm border border-dashed border-gray-300 bg-white p-3 text-left transition-all duration-150 hover:border-gray-400 active:scale-[1.03] w-full"
+                  >
+                    <p className="font-semibold text-sm text-gray-900">➕ Otros</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Producto fuera del catálogo</p>
+                  </button>
+                </div>
               </>
             )
           })()}
@@ -1015,7 +1081,7 @@ export default function PosView() {
                   <div className="flex items-center gap-1">
                     <button onClick={() => quitarDelCarrito(item.producto.id)} className="w-6 h-6 border border-gray-200 rounded-sm bg-gray-50 text-xs">-</button>
                     <span className="w-5 text-center text-xs font-bold">{item.cantidad}</span>
-                    <button onClick={() => agregarAlCarrito(item.producto)} disabled={calcularStockDisponible(item.producto.id) <= 0} className="w-6 h-6 border border-gray-200 rounded-sm bg-gray-50 text-xs disabled:opacity-40">+</button>
+                    <button onClick={() => item.esManual ? agregarAlCarrito(item.producto, true) : agregarAlCarrito(item.producto)} disabled={!item.esManual && calcularStockDisponible(item.producto.id) <= 0} className="w-6 h-6 border border-gray-200 rounded-sm bg-gray-50 text-xs disabled:opacity-40">+</button>
                   </div>
                 </div>
               ))}
@@ -1175,6 +1241,88 @@ export default function PosView() {
           </div>
         </div>
       )}
+
+      {mostrarModalProductoManual && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setMostrarModalProductoManual(false)}>
+          <div className="bg-white rounded-sm shadow-xl p-6 w-80 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-gray-900">Producto manual</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Nombre</label>
+                <input
+                  type="text"
+                  value={nombreProductoManual}
+                  onChange={(e) => setNombreProductoManual(e.target.value)}
+                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-gray-500"
+                  placeholder="Ej: Maple de huevo"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Precio (Bs.)</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={precioProductoManual}
+                  onChange={(e) => setPrecioProductoManual(e.target.value)}
+                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-gray-500"
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Cantidad</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCantidadProductoManual(Math.max(1, cantidadProductoManual - 1))}
+                    className="w-8 h-8 border border-gray-200 rounded-sm bg-gray-50 text-xs font-bold"
+                  >-</button>
+                  <span className="w-8 text-center text-sm font-bold">{cantidadProductoManual}</span>
+                  <button
+                    type="button"
+                    onClick={() => setCantidadProductoManual(cantidadProductoManual + 1)}
+                    className="w-8 h-8 border border-gray-200 rounded-sm bg-gray-50 text-xs font-bold"
+                  >+</button>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setMostrarModalProductoManual(false)}
+                className="px-4 py-2 text-xs font-medium border border-gray-200 rounded-sm text-gray-600 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const nombre = nombreProductoManual.trim()
+                  const precio = parseFloat(precioProductoManual)
+                  if (!nombre) {
+                    alert('El nombre es obligatorio')
+                    return
+                  }
+                  if (isNaN(precio) || precio <= 0) {
+                    alert('El precio debe ser mayor a 0')
+                    return
+                  }
+                  if (cantidadProductoManual <= 0) return
+                  agregarProductoManual(nombre, precio, cantidadProductoManual)
+                  setMostrarModalProductoManual(false)
+                  setNombreProductoManual('')
+                  setPrecioProductoManual('')
+                  setCantidadProductoManual(1)
+                }}
+                className="px-4 py-2 text-xs font-medium bg-gray-900 text-white rounded-sm hover:bg-gray-800"
+              >
+                Agregar al carrito
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 
@@ -1215,10 +1363,10 @@ export default function PosView() {
             >
               Cancelar
             </button>
-          </div>
-        )}
-      </div>
-    )
+        </div>
+      )}
+    </div>
+  )
   }
 
   const renderJornadaOperativa = (mensajeEstado: string, mostrarAccionCierre: boolean) => (

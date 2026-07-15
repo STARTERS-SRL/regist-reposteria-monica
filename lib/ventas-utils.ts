@@ -21,7 +21,7 @@ export interface VentaEnriquecida {
 export function mapearVenta(v: any): VentaEnriquecida {
   const detalles = ((v as any).detalle_ventas as any[])?.map((d: any) => ({
     cantidad: d.cantidad,
-    producto: d.productos?.nombre || 'Producto'
+    producto: d.es_producto_manual ? d.nombre_manual : (d.productos?.nombre || 'Producto')
   })) || []
 
   return {
