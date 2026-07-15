@@ -47,6 +47,9 @@ interface JornadaActual {
   bloqueada: boolean
   snapshotApertura?: any
   snapshotCierre?: any
+  fechaApertura?: string
+  idApertura?: number
+  idCierre?: number
 }
 
 type SubPestañaPos = 'punto_venta' | 'historial_ventas'
@@ -105,8 +108,10 @@ export default function PosView() {
 
     if (!usuario || !sucursalId) return
 
-    cargarEstadoJornada()
-    fetchVentasLocalesHoy()
+    ;(async () => {
+      const fechaAp = await cargarEstadoJornada()
+      await fetchVentasLocalesHoy(fechaAp)
+    })()
   }, [usuario, sucursalId])
 
   const hoyIso = () => new Date().toISOString().split('T')[0]
@@ -139,11 +144,11 @@ export default function PosView() {
     if (data) setSucursales(data.filter((s: any) => s.activo !== false))
   }
 
-  const fetchVentasLocalesHoy = async () => {
+  const fetchVentasLocalesHoy = async (desdeFecha?: string) => {
     if (!sucursalId) return
 
-    const hoy = hoyIso()
-    const startOfToday = `${hoy}T00:00:00.000Z`
+    const fechaBase = desdeFecha || hoyIso()
+    const startOfToday = `${fechaBase}T00:00:00.000Z`
 
     const { data, error: errHoy } = await supabase
       .from('ventas')
@@ -181,35 +186,41 @@ export default function PosView() {
 
     const { data } = await supabase
       .from('registros_diarios')
-      .select('id, tipo, snapshot_stock')
+      .select('id, tipo, snapshot_stock, fecha')
       .eq('sucursal_id', sucursalId)
-      .eq('fecha', hoyIso())
       .in('tipo', ['apertura', 'cierre'])
+      .order('id', { ascending: false })
 
-    const apertura = data?.find((registro: any) => registro.tipo === 'apertura')
-    const cierre = data?.find((registro: any) => registro.tipo === 'cierre')
+    const apertura = data?.find((r: any) => r.tipo === 'apertura') || null
+    const cierre = data?.find((r: any) => r.tipo === 'cierre') || null
+    const hayApertura = Boolean(apertura)
+    const hayCierre = hayApertura ? Boolean(cierre) && (cierre.id > apertura.id) : Boolean(cierre)
+
     const siguienteJornada: JornadaActual = {
-      apertura: Boolean(apertura),
-      cierre: Boolean(cierre),
-      bloqueada: Boolean(cierre),
+      apertura: hayApertura,
+      cierre: hayCierre,
+      bloqueada: hayCierre,
       snapshotApertura: apertura?.snapshot_stock,
       snapshotCierre: cierre?.snapshot_stock,
+      fechaApertura: apertura?.fecha,
+      idApertura: apertura?.id,
+      idCierre: cierre?.id,
     }
 
     setJornadaActual(siguienteJornada)
     setModoCierreAdministrador(false)
 
-    if (siguienteJornada.cierre) {
-      const stockCierre = await obtenerListadoDesdeSnapshot(siguienteJornada.snapshotCierre)
+    if (hayCierre) {
+      const stockCierre = await obtenerListadoDesdeSnapshot(cierre?.snapshot_stock)
       actualizarStockEditable(stockCierre)
       setStockJornada(stockCierre)
-      return
+      return siguienteJornada.fechaApertura
     }
 
-    if (siguienteJornada.apertura) {
-      setStockJornada(await obtenerListadoDesdeSnapshot(siguienteJornada.snapshotApertura))
+    if (hayApertura) {
+      setStockJornada(await obtenerListadoDesdeSnapshot(apertura.snapshot_stock))
       await cargarStockSugerido(null)
-      return
+      return siguienteJornada.fechaApertura
     }
 
     await cargarStockSugeridoDeUltimoCierre()
@@ -223,7 +234,7 @@ export default function PosView() {
       .select('snapshot_stock')
       .eq('sucursal_id', sucursalId)
       .eq('tipo', 'cierre')
-      .order('fecha', { ascending: false })
+      .order('id', { ascending: false })
       .limit(1)
       .maybeSingle()
 
@@ -355,14 +366,18 @@ export default function PosView() {
     setCargando(true)
     const snapshotFinal = crearSnapshotDesdeInputs()
 
-    const { data: registros } = await supabase
+    const { data: regs } = await supabase
       .from('registros_diarios')
       .select('id, tipo')
       .eq('sucursal_id', sucursalId)
-      .eq('fecha', hoyIso())
       .in('tipo', ['apertura', 'cierre'])
+      .order('id', { ascending: false })
+      .limit(5)
 
-    if (registros?.some((registro: any) => registro.tipo === 'apertura')) {
+    const aperturaPrev = regs?.find((r: any) => r.tipo === 'apertura')
+    const cierrePrev = regs?.find((r: any) => r.tipo === 'cierre')
+
+    if (aperturaPrev && (!cierrePrev || aperturaPrev.id > cierrePrev.id)) {
       setMensaje('La jornada ya fue abierta')
       await cargarEstadoJornada()
       setCargando(false)
@@ -386,8 +401,8 @@ export default function PosView() {
 
     await sincronizarInventario(snapshotFinal)
     setMensaje('Jornada iniciada con éxito')
-    await cargarEstadoJornada()
-    await fetchVentasLocalesHoy()
+    const fechaAp = await cargarEstadoJornada()
+    await fetchVentasLocalesHoy(fechaAp)
     setCargando(false)
     setTimeout(() => setMensaje(''), 3000)
   }
@@ -537,14 +552,14 @@ export default function PosView() {
     }
 
     setMensaje('Venta realizada')
-    await cargarEstadoJornada()
+    const fechaAp = await cargarEstadoJornada()
     setCarrito([])
     setMontoEfectivoMixto('')
     setMontoQrMixto('')
     setMetodoPago('efectivo')
     setModoOferta(false)
     setNuevoTotalOfertaStr('')
-    await fetchVentasLocalesHoy()
+    await fetchVentasLocalesHoy(fechaAp)
     setCargando(false)
     setTimeout(() => setMensaje(''), 3000)
   }
@@ -575,15 +590,18 @@ export default function PosView() {
     setCargando(true)
     const snapshotFinal = crearSnapshotDesdeInputs()
 
-    const { data: cierreExistente } = await supabase
+    const { data: regsCierre } = await supabase
       .from('registros_diarios')
-      .select('id')
+      .select('id, tipo')
       .eq('sucursal_id', sucursalId)
-      .eq('fecha', hoyIso())
-      .eq('tipo', 'cierre')
-      .maybeSingle()
+      .in('tipo', ['apertura', 'cierre'])
+      .order('id', { ascending: false })
+      .limit(5)
 
-    if (cierreExistente) {
+    const aperturaCierre = regsCierre?.find((r: any) => r.tipo === 'apertura')
+    const cierreExiste = regsCierre?.find((r: any) => r.tipo === 'cierre')
+
+    if (cierreExiste && aperturaCierre && cierreExiste.id > aperturaCierre.id) {
       setMensaje('La jornada ya tiene un cierre confirmado')
       await cargarEstadoJornada()
       setCargando(false)
@@ -607,8 +625,8 @@ export default function PosView() {
 
     await sincronizarInventario(snapshotFinal)
     setMensaje('Jornada cerrada de forma definitiva.')
-    await cargarEstadoJornada()
-    await fetchVentasLocalesHoy()
+    const fechaAp = await cargarEstadoJornada()
+    await fetchVentasLocalesHoy(fechaAp)
     setCargando(false)
     setTimeout(() => setMensaje(''), 3000)
   }
@@ -619,20 +637,25 @@ export default function PosView() {
       return
     }
 
-    const seguro = confirm('¿Está seguro de restaurar el estado? Esto eliminará las fotos guardadas de hoy para reabrir los procesos.')
+    const seguro = confirm('¿Está seguro de restaurar el estado? Se eliminarán los registros de apertura/cierre para reabrir los procesos.')
     if (!seguro) return
 
     setCargando(true)
 
-    await supabase
-      .from('registros_diarios')
-      .delete()
-      .eq('sucursal_id', sucursalId)
-      .eq('fecha', hoyIso())
+    const idsAEliminar: number[] = []
+    if (jornadaActual.idApertura) idsAEliminar.push(jornadaActual.idApertura)
+    if (jornadaActual.idCierre) idsAEliminar.push(jornadaActual.idCierre)
+
+    if (idsAEliminar.length > 0) {
+      await supabase
+        .from('registros_diarios')
+        .delete()
+        .in('id', idsAEliminar)
+    }
 
     setMensaje('Efectuando reversión...')
-    await cargarEstadoJornada()
-    await fetchVentasLocalesHoy()
+    const fechaAp = await cargarEstadoJornada()
+    await fetchVentasLocalesHoy(fechaAp)
     setCargando(false)
     setTimeout(() => setMensaje(''), 3000)
   }
@@ -643,6 +666,19 @@ export default function PosView() {
         <h2 className="text-xl font-bold tracking-tight text-gray-900">Punto de Venta</h2>
         {usuario && <p className="text-xs text-gray-500 mt-0.5">Operador asignado: <strong className="text-gray-700">{usuario.nombre}</strong></p>}
       </div>
+
+      <div className="flex items-center gap-2">
+        {sucursalId && (
+          <span className={`text-xs font-bold px-2 py-1 rounded-sm border ${
+            jornadaActual.bloqueada
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : jornadaActual.apertura
+                ? 'bg-green-50 text-green-700 border-green-200'
+                : 'bg-gray-50 text-gray-400 border-gray-200'
+          }`}>
+            {jornadaActual.bloqueada ? '🔴 Cerrada' : jornadaActual.apertura ? '🟢 Abierta' : '⚪ Inactiva'}
+          </span>
+        )}
 
       {mostrarPestañas && sucursalId && jornadaActual.apertura && !jornadaActual.bloqueada && (
         <div className="flex bg-gray-100 p-0.5 rounded-sm border border-gray-200">
@@ -663,6 +699,7 @@ export default function PosView() {
           </button>
         </div>
       )}
+      </div>
     </div>
   )
 
@@ -683,15 +720,6 @@ export default function PosView() {
         </select>
       </div>
 
-      {mostrarRollback && sucursalId && (jornadaActual.apertura || jornadaActual.cierre) && (
-        <button
-          onClick={ejecutarRollbackJornada}
-          disabled={cargando}
-          className="rounded-sm border border-amber-300 bg-amber-50 px-4 h-9 text-xs font-semibold uppercase text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-        >
-          Revertir / Reiniciar Jornada
-        </button>
-      )}
     </div>
   )
 
@@ -1251,7 +1279,21 @@ export default function PosView() {
 
       {sucursalId && jornadaActual.apertura && jornadaActual.cierre && renderInventarioJornada()}
 
-      {sucursalId && jornadaActual.apertura && (jornadaActual.cierre || modoCierreAdministrador) && renderCierreAdministrador()}
+      {sucursalId && jornadaActual.apertura && jornadaActual.cierre && esAdministradora && renderApertura()}
+
+      {sucursalId && jornadaActual.apertura && modoCierreAdministrador && renderCierreAdministrador()}
+
+      {sucursalId && esAdministradora && (jornadaActual.apertura || jornadaActual.cierre) && (
+        <div className="flex justify-end pt-4 border-t border-gray-100">
+          <button
+            onClick={ejecutarRollbackJornada}
+            disabled={cargando}
+            className="rounded-sm border border-amber-300 bg-amber-50 px-4 h-9 text-xs font-semibold uppercase text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+          >
+            Revertir / Reiniciar Jornada
+          </button>
+        </div>
+      )}
     </div>
   )
 
