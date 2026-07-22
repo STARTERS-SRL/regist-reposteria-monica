@@ -89,6 +89,7 @@ export default function PosView() {
   const [nombreProductoManual, setNombreProductoManual] = useState('')
   const [precioProductoManual, setPrecioProductoManual] = useState('')
   const [cantidadProductoManual, setCantidadProductoManual] = useState(1)
+  const [inventarioColapsado, setInventarioColapsado] = useState(true)
 
   const esAdministradora = usuario?.rol === 'admin'
   const esVendedora = usuario?.rol === 'empleado'
@@ -726,26 +727,6 @@ export default function PosView() {
             {jornadaActual.bloqueada ? '🔴 Cerrada' : jornadaActual.apertura ? '🟢 Abierta' : '⚪ Inactiva'}
           </span>
         )}
-
-      {mostrarPestañas && sucursalId && jornadaActual.apertura && !jornadaActual.bloqueada && (
-        <div className="flex bg-gray-100 p-0.5 rounded-sm border border-gray-200">
-          <button
-            onClick={() => setPestañaActiva('punto_venta')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-sm transition-all ${pestañaActiva === 'punto_venta' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-          >
-            🛒 Caja / POS
-          </button>
-          <button
-            onClick={() => setPestañaActiva('historial_ventas')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-sm transition-all relative ${pestañaActiva === 'historial_ventas' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-          >
-            📋 Ventas de Hoy
-            {ventasDeHoy.length > 0 && (
-              <span className="ml-1.5 bg-blue-600 text-white font-mono text-[10px] px-1 rounded-full">{ventasDeHoy.length}</span>
-            )}
-          </button>
-        </div>
-      )}
       </div>
     </div>
   )
@@ -813,31 +794,45 @@ export default function PosView() {
   )
 
   const renderInventarioJornada = () => (
-    <div className="border border-gray-200 bg-white p-6 rounded-sm space-y-4">
-      <div className="border-b border-gray-100 pb-3">
-        <h3 className="text-sm font-bold uppercase tracking-wider text-gray-900">Inventario del Día</h3>
-        <p className="text-xs text-gray-500">
-          {jornadaActual.cierre ? 'Snapshot final confirmado para esta jornada:' : 'Snapshot inicial confirmado para esta jornada:'}
-        </p>
-      </div>
+    <div className="border border-gray-200 bg-white rounded-sm">
+      <button
+        onClick={() => setInventarioColapsado(!inventarioColapsado)}
+        className="w-full flex items-center justify-between px-6 py-4 text-left"
+      >
+        <span className="text-sm font-bold uppercase tracking-wider text-gray-900">
+          {inventarioColapsado ? '▶' : '▼'} Inicio del día
+        </span>
+      </button>
+      <div
+        className="overflow-hidden transition-all duration-300 ease-in-out"
+        style={{ maxHeight: inventarioColapsado ? '0px' : '600px' }}
+      >
+        <div className="px-6 pb-6 space-y-4">
+          <div className="border-b border-gray-100 pb-3">
+            <p className="text-xs text-gray-500">
+              {jornadaActual.cierre ? 'Snapshot final confirmado para esta jornada:' : 'Snapshot inicial confirmado para esta jornada:'}
+            </p>
+          </div>
 
-      <div className="border border-gray-200 rounded-sm overflow-hidden max-w-md">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase text-gray-500">
-            <tr>
-              <th className="px-4 py-2">Producto</th>
-              <th className="px-4 py-2 text-right">Cantidad</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {stockJornada.map((item) => (
-              <tr key={item.producto_id}>
-                <td className="px-4 py-2 text-gray-700 font-medium">{item.nombre}</td>
-                <td className="px-4 py-2 text-right font-bold text-gray-900">{item.cantidad}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          <div className="border border-gray-200 rounded-sm overflow-hidden max-w-md">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase text-gray-500">
+                <tr>
+                  <th className="px-4 py-2">Producto</th>
+                  <th className="px-4 py-2 text-right">Cantidad</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {stockJornada.map((item) => (
+                  <tr key={item.producto_id}>
+                    <td className="px-4 py-2 text-gray-700 font-medium">{item.nombre}</td>
+                    <td className="px-4 py-2 text-right font-bold text-gray-900">{item.cantidad}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -1426,27 +1421,6 @@ export default function PosView() {
 
       {!sucursalId && (
         <div className="bg-white border border-gray-200 rounded-sm p-6 text-sm text-gray-500">Seleccione una sucursal para revisar la jornada.</div>
-      )}
-
-      {sucursalId && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="rounded-sm border border-gray-200 bg-white p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Apertura</p>
-            <p className={`mt-2 text-sm font-bold ${jornadaActual.apertura ? 'text-green-700' : 'text-amber-700'}`}>
-              {jornadaActual.apertura ? 'Confirmada' : 'Pendiente'}
-            </p>
-          </div>
-          <div className="rounded-sm border border-gray-200 bg-white p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Cierre</p>
-            <p className={`mt-2 text-sm font-bold ${jornadaActual.cierre ? 'text-green-700' : 'text-gray-700'}`}>
-              {jornadaActual.cierre ? 'Confirmado' : 'Sin confirmar'}
-            </p>
-          </div>
-          <div className="rounded-sm border border-gray-200 bg-white p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Ventas de Hoy</p>
-            <p className="mt-2 text-sm font-bold text-blue-700">{ventasDeHoy.length} transacciones</p>
-          </div>
-        </div>
       )}
 
       {sucursalId && !jornadaActual.apertura && (

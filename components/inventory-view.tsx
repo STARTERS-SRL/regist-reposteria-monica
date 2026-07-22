@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase-client'
 
 interface InventoryItem {
@@ -60,6 +60,10 @@ export default function InventoryView({ branchId }: Props) {
   const [editCantidad, setEditCantidad] = useState('')
   const [editMinimo, setEditMinimo] = useState('')
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const lastTapRef = useRef<number>(0)
+  const lastTapPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+
   useEffect(() => {
     fetchInventory()
     fetchCatalogos()
@@ -108,6 +112,43 @@ export default function InventoryView({ branchId }: Props) {
     setEditPrecio((item.productos?.precio || 0).toString())
     setEditCantidad(item.cantidad.toString())
     setEditMinimo((item.minimo_alerta ?? 2).toString())
+  }
+
+  const activateEdit = (item: InventoryItem) => {
+    const container = scrollContainerRef.current
+    const savedScrollLeft = container?.scrollLeft ?? 0
+    const savedScrollTop = container?.scrollTop ?? 0
+
+    startEditing(item)
+
+    requestAnimationFrame(() => {
+      if (container) {
+        container.scrollLeft = savedScrollLeft
+        container.scrollTop = savedScrollTop
+      }
+    })
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent, item: InventoryItem) => {
+    const now = Date.now()
+    const touch = e.changedTouches[0]
+    const lastTap = lastTapRef.current
+    const lastPos = lastTapPosRef.current
+
+    const timeDiff = now - lastTap
+    const xDiff = Math.abs(touch.clientX - lastPos.x)
+    const yDiff = Math.abs(touch.clientY - lastPos.y)
+
+    if (timeDiff < 300 && xDiff < 30 && yDiff < 30) {
+      const target = e.target as HTMLElement
+      if (!target.closest('button') && !target.closest('select') && !target.closest('input')) {
+        activateEdit(item)
+      }
+      lastTapRef.current = 0
+    } else {
+      lastTapRef.current = now
+      lastTapPosRef.current = { x: touch.clientX, y: touch.clientY }
+    }
   }
 
   // Maneja el cambio de producto dentro de la edición para auto-moldear el precio
@@ -249,7 +290,7 @@ export default function InventoryView({ branchId }: Props) {
         />
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" ref={scrollContainerRef}>
         <table className="w-full text-left">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50 text-xs font-bold uppercase tracking-wider text-gray-700">
@@ -366,7 +407,7 @@ export default function InventoryView({ branchId }: Props) {
                 // APARTADO NUEVO: RENDERIZAR FILA EN MODO EDICIÓN (Punto Solicitado)
                 if (editingId === item.id) {
                   return (
-                    <tr key={item.id} className="bg-amber-50/40 border-b border-amber-200">
+                    <tr key={item.id} className="bg-amber-50/50 border-l-2 border-l-amber-400 border-b border-amber-200">
                       {/* Producto modificable */}
                       <td className="px-6 py-3">
                         <select
@@ -462,7 +503,15 @@ export default function InventoryView({ branchId }: Props) {
                 const esAntiguo = diasEnEstante >= 4 && item.cantidad > 0
 
                 return (
-                  <tr key={item.id} className="hover:bg-gray-50/50 ready-transition">
+                  <tr
+                    key={item.id}
+                    className="hover:bg-gray-50/50 ready-transition cursor-pointer select-none"
+                    onDoubleClick={(e) => {
+                      if ((e.target as HTMLElement).closest('button')) return
+                      activateEdit(item)
+                    }}
+                    onTouchEnd={(e) => handleTouchEnd(e, item)}
+                  >
                     <td className="px-6 py-4 font-medium text-gray-900 uppercase text-xs tracking-wide">
                       {item.productos?.nombre || '-'}
                     </td>
@@ -508,7 +557,7 @@ export default function InventoryView({ branchId }: Props) {
 
                     <td className="px-6 py-4 text-right text-xs font-semibold space-x-3">
                       <button
-                        onClick={() => startEditing(item)}
+                        onClick={() => activateEdit(item)}
                         className="text-blue-600 hover:text-blue-800 uppercase tracking-wider text-[11px] font-bold active:scale-95 transition-all"
                       >
                         Editar
